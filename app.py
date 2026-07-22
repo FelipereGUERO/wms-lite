@@ -164,46 +164,267 @@ st.sidebar.caption("Versão MVP 0.2")
 if modulo == "Dashboard":
     st.header("Dashboard Geral")
 
+    st.write(
+        "Visão geral dos principais indicadores operacionais do WMS Lite."
+    )
+
+    # =========================
+    # INDICADORES PRINCIPAIS
+    # =========================
+
     total_skus = st.session_state.produtos["SKU"].nunique() if not st.session_state.produtos.empty else 0
     total_localizacoes = st.session_state.localizacoes["Código"].nunique() if not st.session_state.localizacoes.empty else 0
     total_estoque = st.session_state.estoque["Quantidade"].sum() if not st.session_state.estoque.empty else 0
     total_movimentacoes = len(st.session_state.movimentacoes)
     total_pedidos = len(st.session_state.pedidos)
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    if st.session_state.pedidos.empty:
+        pedidos_pendentes = 0
+        pedidos_expedidos = 0
+    else:
+        pedidos_pendentes = len(
+            st.session_state.pedidos[
+                st.session_state.pedidos["Status"].isin([
+                    "Criado",
+                    "Aguardando Picking",
+                    "Em Picking",
+                    "Separado",
+                    "Conferido"
+                ])
+            ]
+        )
+
+        pedidos_expedidos = len(
+            st.session_state.pedidos[
+                st.session_state.pedidos["Status"] == "Expedido"
+            ]
+        )
+
+    if st.session_state.estoque.empty:
+        itens_bloqueados = 0
+        itens_quarentena = 0
+    else:
+        itens_bloqueados = st.session_state.estoque[
+            st.session_state.estoque["Status Estoque"] == "Bloqueado"
+        ]["Quantidade"].sum()
+
+        itens_quarentena = st.session_state.estoque[
+            st.session_state.estoque["Status Estoque"] == "Quarentena"
+        ]["Quantidade"].sum()
+
+    col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("SKUs Cadastrados", total_skus)
     col2.metric("Localizações", total_localizacoes)
-    col3.metric("Quantidade em Estoque", total_estoque)
+    col3.metric("Qtd. Total em Estoque", total_estoque)
     col4.metric("Movimentações", total_movimentacoes)
+
+    col5, col6, col7, col8 = st.columns(4)
+
     col5.metric("Pedidos / Ordens", total_pedidos)
+    col6.metric("Pedidos Pendentes", pedidos_pendentes)
+    col7.metric("Pedidos Expedidos", pedidos_expedidos)
+    col8.metric("Itens Bloqueados", itens_bloqueados)
+
+    col9, col10, col11, col12 = st.columns(4)
+
+    col9.metric("Itens em Quarentena", itens_quarentena)
+
+    # =========================
+    # VALIDADES
+    # =========================
+
+    itens_vencidos = 0
+    itens_vencendo_30 = 0
+
+    if not st.session_state.estoque.empty:
+        df_validade_dash = st.session_state.estoque.copy()
+
+        df_validade_dash["Data Validade"] = pd.to_datetime(
+            df_validade_dash["Validade"],
+            format="%d/%m/%Y",
+            errors="coerce"
+        )
+
+        hoje = pd.Timestamp(date.today())
+
+        df_validade_dash["Dias para Vencer"] = (
+            df_validade_dash["Data Validade"] - hoje
+        ).dt.days
+
+        itens_vencidos = len(
+            df_validade_dash[
+                df_validade_dash["Dias para Vencer"] < 0
+            ]
+        )
+
+        itens_vencendo_30 = len(
+            df_validade_dash[
+                (df_validade_dash["Dias para Vencer"] >= 0) &
+                (df_validade_dash["Dias para Vencer"] <= 30)
+            ]
+        )
+
+    col10.metric("Itens Vencidos", itens_vencidos)
+    col11.metric("Vencem em até 30 dias", itens_vencendo_30)
+
+    # =========================
+    # ESTOQUE ABAIXO DO MÍNIMO
+    # =========================
+
+    produtos_abaixo_minimo = pd.DataFrame()
+
+    if not st.session_state.produtos.empty and not st.session_state.estoque.empty:
+        saldo_por_sku = st.session_state.estoque.groupby(
+            ["SKU"],
+            as_index=False
+        )["Quantidade"].sum()
+
+        produtos_minimo = st.session_state.produtos.copy()
+
+        produtos_abaixo_minimo = pd.merge(
+            produtos_minimo,
+            saldo_por_sku,
+            on="SKU",
+            how="left"
+        )
+
+        produtos_abaixo_minimo["Quantidade"] = produtos_abaixo_minimo["Quantidade"].fillna(0)
+
+        produtos_abaixo_minimo = produtos_abaixo_minimo[
+            produtos_abaixo_minimo["Quantidade"] < produtos_abaixo_minimo["Estoque Mínimo"]
+        ]
+
+    col12.metric("SKUs Abaixo do Mínimo", len(produtos_abaixo_minimo))
 
     st.divider()
 
-    st.subheader("Resumo do Estoque")
+    # =========================
+    # RESUMO DO ESTOQUE
+    # =========================
+
+    st.subheader("Resumo do Estoque por SKU")
 
     if st.session_state.estoque.empty:
         st.info("Ainda não existem itens em estoque.")
     else:
         estoque_resumo = st.session_state.estoque.groupby(
-            ["SKU", "Descrição"], as_index=False
+            ["SKU", "Descrição", "Status Estoque"],
+            as_index=False
         )["Quantidade"].sum()
 
-        st.dataframe(estoque_resumo, use_container_width=True)
+        st.dataframe(
+            estoque_resumo,
+            use_container_width=True
+        )
 
     st.divider()
 
-    st.subheader("Pedidos por Status")
+    # =========================
+    # PRODUTOS ABAIXO DO MÍNIMO
+    # =========================
+
+    st.subheader("Produtos Abaixo do Estoque Mínimo")
+
+    if produtos_abaixo_minimo.empty:
+        st.success("Não há produtos abaixo do estoque mínimo.")
+    else:
+        colunas_minimo = [
+            "SKU",
+            "Descrição",
+            "Categoria",
+            "Estoque Mínimo",
+            "Quantidade",
+            "Status"
+        ]
+
+        st.warning("Existem produtos com saldo abaixo do estoque mínimo.")
+
+        st.dataframe(
+            produtos_abaixo_minimo[colunas_minimo],
+            use_container_width=True
+        )
+
+    st.divider()
+
+    # =========================
+    # PEDIDOS POR STATUS
+    # =========================
+
+    st.subheader("Pedidos / Ordens por Status")
 
     if st.session_state.pedidos.empty:
         st.info("Ainda não existem pedidos cadastrados.")
     else:
         pedidos_status = st.session_state.pedidos.groupby(
-            ["Status"], as_index=False
+            ["Status"],
+            as_index=False
         )["Pedido"].count()
 
-        pedidos_status = pedidos_status.rename(columns={"Pedido": "Quantidade"})
-        st.dataframe(pedidos_status, use_container_width=True)
+        pedidos_status = pedidos_status.rename(
+            columns={"Pedido": "Quantidade"}
+        )
+
+        st.dataframe(
+            pedidos_status,
+            use_container_width=True
+        )
+
+    st.divider()
+
+    # =========================
+    # MOVIMENTAÇÕES POR TIPO
+    # =========================
+
+    st.subheader("Movimentações por Tipo")
+
+    if st.session_state.movimentacoes.empty:
+        st.info("Ainda não existem movimentações registradas.")
+    else:
+        movimentacoes_tipo = st.session_state.movimentacoes.groupby(
+            ["Tipo"],
+            as_index=False
+        )["Quantidade"].sum()
+
+        st.dataframe(
+            movimentacoes_tipo,
+            use_container_width=True
+        )
+
+    st.divider()
+
+    # =========================
+    # ALERTAS OPERACIONAIS
+    # =========================
+
+    st.subheader("Alertas Operacionais")
+
+    alertas = []
+
+    if itens_bloqueados > 0:
+        alertas.append(f"Existem {itens_bloqueados} unidades bloqueadas.")
+
+    if itens_quarentena > 0:
+        alertas.append(f"Existem {itens_quarentena} unidades em quarentena.")
+
+    if itens_vencidos > 0:
+        alertas.append(f"Existem {itens_vencidos} registros de estoque vencidos.")
+
+    if itens_vencendo_30 > 0:
+        alertas.append(f"Existem {itens_vencendo_30} registros vencendo em até 30 dias.")
+
+    if len(produtos_abaixo_minimo) > 0:
+        alertas.append(f"Existem {len(produtos_abaixo_minimo)} SKUs abaixo do estoque mínimo.")
+
+    if pedidos_pendentes > 0:
+        alertas.append(f"Existem {pedidos_pendentes} pedidos pendentes no fluxo operacional.")
+
+    if len(alertas) == 0:
+        st.success("Não há alertas operacionais críticos no momento.")
+    else:
+        for alerta in alertas:
+            st.warning(alerta)
+
 
 
 # =========================
