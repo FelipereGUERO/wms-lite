@@ -148,7 +148,7 @@ modulo = st.sidebar.radio(
         "Expedição / Conferência",
         "Inventário",        
         "Histórico de Movimentações",
-        "Exportar Dados"
+        "Relatórios / Exportar Dados"
     ]
 )
 
@@ -2042,49 +2042,467 @@ elif modulo == "Histórico de Movimentações":
 
 
 # =========================
-# EXPORTAR DADOS
+# RELATÓRIOS / EXPORTAR DADOS
 # =========================
 
-elif modulo == "Exportar Dados":
-    st.header("Exportar Dados")
+elif modulo == "Relatórios / Exportar Dados":
+    st.header("Relatórios / Exportar Dados")
 
-    st.write("Nesta área você pode baixar as bases atuais em CSV.")
+    st.write(
+        "Nesta área você pode consultar relatórios operacionais e baixar as bases atuais em CSV."
+    )
 
-    col1, col2 = st.columns(2)
+    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+        "Estoque Geral",
+        "Pedidos / Ordens",
+        "Movimentações",
+        "Alertas Operacionais",
+        "Exportar CSV"
+    ])
 
-    with col1:
-        st.download_button(
-            label="Baixar Produtos",
-            data=st.session_state.produtos.to_csv(index=False, sep=";").encode("utf-8"),
-            file_name="produtos.csv",
-            mime="text/csv"
+    # =========================
+    # ABA 1 - ESTOQUE GERAL
+    # =========================
+
+    with aba1:
+        st.subheader("Relatório de Estoque Geral")
+
+        if st.session_state.estoque.empty:
+            st.info("Não há estoque cadastrado.")
+        else:
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                filtro_sku_rel = st.text_input("Filtrar SKU", key="rel_estoque_sku")
+
+            with col2:
+                filtro_local_rel = st.text_input("Filtrar Localização", key="rel_estoque_local")
+
+            with col3:
+                filtro_status_rel = st.selectbox(
+                    "Filtrar Status",
+                    [
+                        "Todos",
+                        "Disponível",
+                        "Quarentena",
+                        "Bloqueado"
+                    ],
+                    key="rel_estoque_status"
+                )
+
+            df_rel_estoque = st.session_state.estoque.copy()
+
+            if filtro_sku_rel:
+                df_rel_estoque = df_rel_estoque[
+                    df_rel_estoque["SKU"].astype(str).str.contains(
+                        filtro_sku_rel,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_local_rel:
+                df_rel_estoque = df_rel_estoque[
+                    df_rel_estoque["Localização"].astype(str).str.contains(
+                        filtro_local_rel,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_status_rel != "Todos":
+                df_rel_estoque = df_rel_estoque[
+                    df_rel_estoque["Status Estoque"] == filtro_status_rel
+                ]
+
+            st.dataframe(df_rel_estoque, use_container_width=True)
+
+            st.divider()
+
+            st.subheader("Resumo por SKU")
+
+            if df_rel_estoque.empty:
+                st.info("Nenhum item encontrado com os filtros selecionados.")
+            else:
+                resumo_sku = df_rel_estoque.groupby(
+                    [
+                        "SKU",
+                        "Descrição",
+                        "Status Estoque"
+                    ],
+                    as_index=False
+                )["Quantidade"].sum()
+
+                st.dataframe(resumo_sku, use_container_width=True)
+
+                total_qtd = df_rel_estoque["Quantidade"].sum()
+                total_skus = df_rel_estoque["SKU"].nunique()
+                total_locais = df_rel_estoque["Localização"].nunique()
+
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric("Quantidade Total", total_qtd)
+                col2.metric("SKUs no Relatório", total_skus)
+                col3.metric("Localizações no Relatório", total_locais)
+
+    # =========================
+    # ABA 2 - PEDIDOS / ORDENS
+    # =========================
+
+    with aba2:
+        st.subheader("Relatório de Pedidos / Ordens")
+
+        if st.session_state.pedidos.empty:
+            st.info("Não há pedidos ou ordens cadastrados.")
+        else:
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                filtro_pedido_rel = st.text_input("Filtrar Pedido", key="rel_pedido_numero")
+
+            with col2:
+                filtro_sku_pedido_rel = st.text_input("Filtrar SKU", key="rel_pedido_sku")
+
+            with col3:
+                filtro_status_pedido_rel = st.selectbox(
+                    "Filtrar Status",
+                    [
+                        "Todos",
+                        "Criado",
+                        "Aguardando Picking",
+                        "Em Picking",
+                        "Separado",
+                        "Conferido",
+                        "Expedido",
+                        "Cancelado"
+                    ],
+                    key="rel_pedido_status"
+                )
+
+            df_rel_pedidos = st.session_state.pedidos.copy()
+
+            if filtro_pedido_rel:
+                df_rel_pedidos = df_rel_pedidos[
+                    df_rel_pedidos["Pedido"].astype(str).str.contains(
+                        filtro_pedido_rel,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_sku_pedido_rel:
+                df_rel_pedidos = df_rel_pedidos[
+                    df_rel_pedidos["SKU"].astype(str).str.contains(
+                        filtro_sku_pedido_rel,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_status_pedido_rel != "Todos":
+                df_rel_pedidos = df_rel_pedidos[
+                    df_rel_pedidos["Status"] == filtro_status_pedido_rel
+                ]
+
+            st.dataframe(df_rel_pedidos, use_container_width=True)
+
+            st.divider()
+
+            st.subheader("Resumo por Status")
+
+            if df_rel_pedidos.empty:
+                st.info("Nenhum pedido encontrado com os filtros selecionados.")
+            else:
+                resumo_status = df_rel_pedidos.groupby(
+                    ["Status"],
+                    as_index=False
+                )["Pedido"].count()
+
+                resumo_status = resumo_status.rename(
+                    columns={"Pedido": "Quantidade"}
+                )
+
+                st.dataframe(resumo_status, use_container_width=True)
+
+                total_pedidos = len(df_rel_pedidos)
+                total_qtd_pedida = df_rel_pedidos["Quantidade"].sum()
+
+                col1, col2 = st.columns(2)
+
+                col1.metric("Total de Pedidos / Ordens", total_pedidos)
+                col2.metric("Quantidade Total Solicitada", total_qtd_pedida)
+
+    # =========================
+    # ABA 3 - MOVIMENTAÇÕES
+    # =========================
+
+    with aba3:
+        st.subheader("Relatório de Movimentações")
+
+        if st.session_state.movimentacoes.empty:
+            st.info("Não há movimentações registradas.")
+        else:
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                filtro_tipo_mov_rel = st.text_input("Filtrar Tipo", key="rel_mov_tipo")
+
+            with col2:
+                filtro_sku_mov_rel = st.text_input("Filtrar SKU", key="rel_mov_sku")
+
+            with col3:
+                filtro_usuario_mov_rel = st.text_input("Filtrar Usuário", key="rel_mov_usuario")
+
+            df_rel_mov = st.session_state.movimentacoes.copy()
+
+            if filtro_tipo_mov_rel:
+                df_rel_mov = df_rel_mov[
+                    df_rel_mov["Tipo"].astype(str).str.contains(
+                        filtro_tipo_mov_rel,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_sku_mov_rel:
+                df_rel_mov = df_rel_mov[
+                    df_rel_mov["SKU"].astype(str).str.contains(
+                        filtro_sku_mov_rel,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_usuario_mov_rel:
+                df_rel_mov = df_rel_mov[
+                    df_rel_mov["Usuário"].astype(str).str.contains(
+                        filtro_usuario_mov_rel,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            st.dataframe(df_rel_mov, use_container_width=True)
+
+            st.divider()
+
+            st.subheader("Resumo por Tipo de Movimentação")
+
+            if df_rel_mov.empty:
+                st.info("Nenhuma movimentação encontrada com os filtros selecionados.")
+            else:
+                resumo_mov_tipo = df_rel_mov.groupby(
+                    ["Tipo"],
+                    as_index=False
+                )["Quantidade"].sum()
+
+                st.dataframe(resumo_mov_tipo, use_container_width=True)
+
+                st.subheader("Resumo por Usuário")
+
+                resumo_mov_usuario = df_rel_mov.groupby(
+                    ["Usuário"],
+                    as_index=False
+                )["Quantidade"].sum()
+
+                st.dataframe(resumo_mov_usuario, use_container_width=True)
+
+                total_mov = len(df_rel_mov)
+                total_qtd_mov = df_rel_mov["Quantidade"].sum()
+
+                col1, col2 = st.columns(2)
+
+                col1.metric("Total de Movimentações", total_mov)
+                col2.metric("Quantidade Movimentada", total_qtd_mov)
+
+    # =========================
+    # ABA 4 - ALERTAS OPERACIONAIS
+    # =========================
+
+    with aba4:
+        st.subheader("Alertas Operacionais")
+
+        col1, col2, col3 = st.columns(3)
+
+        # Estoque baixo
+        with col1:
+            st.markdown("### Estoque Baixo")
+
+            if st.session_state.produtos.empty or st.session_state.estoque.empty:
+                st.info("Sem dados suficientes para avaliar estoque baixo.")
+            else:
+                saldo_sku_alerta = st.session_state.estoque.groupby(
+                    ["SKU", "Descrição"],
+                    as_index=False
+                )["Quantidade"].sum()
+
+                produtos_minimo = st.session_state.produtos[
+                    [
+                        "SKU",
+                        "Estoque Mínimo"
+                    ]
+                ].copy()
+
+                alerta_minimo = saldo_sku_alerta.merge(
+                    produtos_minimo,
+                    on="SKU",
+                    how="left"
+                )
+
+                alerta_minimo["Estoque Mínimo"] = pd.to_numeric(
+                    alerta_minimo["Estoque Mínimo"],
+                    errors="coerce"
+                ).fillna(0)
+
+                alerta_minimo = alerta_minimo[
+                    alerta_minimo["Quantidade"] <= alerta_minimo["Estoque Mínimo"]
+                ]
+
+                if alerta_minimo.empty:
+                    st.success("Nenhum item abaixo do estoque mínimo.")
+                else:
+                    st.warning("Existem itens abaixo ou iguais ao estoque mínimo.")
+                    st.dataframe(alerta_minimo, use_container_width=True)
+
+        # Estoque bloqueado/quarentena
+        with col2:
+            st.markdown("### Bloqueados / Quarentena")
+
+            if st.session_state.estoque.empty:
+                st.info("Não há estoque cadastrado.")
+            else:
+                alerta_bloqueado = st.session_state.estoque[
+                    st.session_state.estoque["Status Estoque"].isin(
+                        [
+                            "Bloqueado",
+                            "Quarentena"
+                        ]
+                    )
+                ]
+
+                if alerta_bloqueado.empty:
+                    st.success("Nenhum item bloqueado ou em quarentena.")
+                else:
+                    st.warning("Existem itens bloqueados ou em quarentena.")
+                    st.dataframe(alerta_bloqueado, use_container_width=True)
+
+        # Pedidos pendentes
+        with col3:
+            st.markdown("### Pedidos Pendentes")
+
+            if st.session_state.pedidos.empty:
+                st.info("Não há pedidos cadastrados.")
+            else:
+                pedidos_pendentes = st.session_state.pedidos[
+                    st.session_state.pedidos["Status"].isin(
+                        [
+                            "Criado",
+                            "Aguardando Picking",
+                            "Em Picking",
+                            "Separado",
+                            "Conferido"
+                        ]
+                    )
+                ]
+
+                if pedidos_pendentes.empty:
+                    st.success("Nenhum pedido pendente.")
+                else:
+                    st.warning("Existem pedidos pendentes.")
+                    st.dataframe(pedidos_pendentes, use_container_width=True)
+
+        st.divider()
+
+        st.subheader("Validades Críticas")
+
+        if st.session_state.estoque.empty:
+            st.info("Não há estoque cadastrado.")
+        else:
+            df_validade_alerta = st.session_state.estoque.copy()
+
+            df_validade_alerta["Data Validade"] = pd.to_datetime(
+                df_validade_alerta["Validade"],
+                format="%d/%m/%Y",
+                errors="coerce"
+            )
+
+            hoje = pd.Timestamp(date.today())
+
+            df_validade_alerta["Dias para Vencer"] = (
+                df_validade_alerta["Data Validade"] - hoje
+            ).dt.days
+
+            df_validade_alerta = df_validade_alerta[
+                df_validade_alerta["Dias para Vencer"].notna()
+            ]
+
+            df_vencidos = df_validade_alerta[
+                df_validade_alerta["Dias para Vencer"] < 0
+            ]
+
+            df_vence_30 = df_validade_alerta[
+                (df_validade_alerta["Dias para Vencer"] >= 0) &
+                (df_validade_alerta["Dias para Vencer"] <= 30)
+            ]
+
+            if df_vencidos.empty and df_vence_30.empty:
+                st.success("Não há itens vencidos ou vencendo em até 30 dias.")
+            else:
+                if not df_vencidos.empty:
+                    st.error("Itens vencidos encontrados.")
+                    st.dataframe(df_vencidos, use_container_width=True)
+
+                if not df_vence_30.empty:
+                    st.warning("Itens vencendo em até 30 dias encontrados.")
+                    st.dataframe(df_vence_30, use_container_width=True)
+
+    # =========================
+    # ABA 5 - EXPORTAR CSV
+    # =========================
+
+    with aba5:
+        st.subheader("Exportar Bases em CSV")
+
+        st.write(
+            "Use estes botões para baixar as bases atuais do sistema."
         )
 
-        st.download_button(
-            label="Baixar Localizações",
-            data=st.session_state.localizacoes.to_csv(index=False, sep=";").encode("utf-8"),
-            file_name="localizacoes.csv",
-            mime="text/csv"
-        )
+        col1, col2 = st.columns(2)
 
-        st.download_button(
-            label="Baixar Pedidos / Ordens",
-            data=st.session_state.pedidos.to_csv(index=False, sep=";").encode("utf-8"),
-            file_name="pedidos.csv",
-            mime="text/csv"
-        )
+        with col1:
+            st.download_button(
+                label="Baixar Produtos",
+                data=st.session_state.produtos.to_csv(index=False, sep=";").encode("utf-8"),
+                file_name="produtos.csv",
+                mime="text/csv"
+            )
 
-    with col2:
-        st.download_button(
-            label="Baixar Estoque",
-            data=st.session_state.estoque.to_csv(index=False, sep=";").encode("utf-8"),
-            file_name="estoque.csv",
-            mime="text/csv"
-        )
+            st.download_button(
+                label="Baixar Localizações",
+                data=st.session_state.localizacoes.to_csv(index=False, sep=";").encode("utf-8"),
+                file_name="localizacoes.csv",
+                mime="text/csv"
+            )
 
-        st.download_button(
-            label="Baixar Movimentações",
-            data=st.session_state.movimentacoes.to_csv(index=False, sep=";").encode("utf-8"),
-            file_name="movimentacoes.csv",
-            mime="text/csv"
-        )
+            st.download_button(
+                label="Baixar Pedidos / Ordens",
+                data=st.session_state.pedidos.to_csv(index=False, sep=";").encode("utf-8"),
+                file_name="pedidos.csv",
+                mime="text/csv"
+            )
+
+        with col2:
+            st.download_button(
+                label="Baixar Estoque",
+                data=st.session_state.estoque.to_csv(index=False, sep=";").encode("utf-8"),
+                file_name="estoque.csv",
+                mime="text/csv"
+            )
+
+            st.download_button(
+                label="Baixar Movimentações",
+                data=st.session_state.movimentacoes.to_csv(index=False, sep=";").encode("utf-8"),
+                file_name="movimentacoes.csv",
+                mime="text/csv"
+            )
+
