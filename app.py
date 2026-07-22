@@ -138,10 +138,11 @@ modulo = st.sidebar.radio(
         "Cadastro de Localizações",
         "Recebimento",
         "Consulta de Estoque",
-        "Movimentação Interna",
+       "Movimentação Interna",
         "Ajustes de Estoque",
-        "Pedidos / Ordens",        
-        "Picking / Separação",
+        "Bloqueio / Desbloqueio",
+        "Pedidos / Ordens",
+        "Picking / Separação",        
         "Expedição / Conferência",
         "Inventário",        
         "Histórico de Movimentações",
@@ -686,6 +687,135 @@ elif modulo == "Ajustes de Estoque":
 
                     st.success("Ajuste de estoque registrado com sucesso.")
                     st.info(f"Saldo anterior: {quantidade_atual} | Novo saldo: {nova_quantidade}")
+
+# =========================
+# BLOQUEIO / DESBLOQUEIO
+# =========================
+
+elif modulo == "Bloqueio / Desbloqueio":
+    st.header("Bloqueio / Desbloqueio de Estoque")
+
+    st.write(
+        "Nesta área você pode alterar o status do estoque para Disponível, Quarentena ou Bloqueado."
+    )
+
+    if st.session_state.estoque.empty:
+        st.warning("Não há estoque cadastrado para bloquear ou desbloquear.")
+    else:
+        st.subheader("Selecionar Item de Estoque")
+
+        estoque_operacao = st.session_state.estoque.copy()
+
+        estoque_operacao["Opção"] = (
+            estoque_operacao["SKU"].astype(str)
+            + " | "
+            + estoque_operacao["Descrição"].astype(str)
+            + " | Local: "
+            + estoque_operacao["Localização"].astype(str)
+            + " | Lote: "
+            + estoque_operacao["Lote"].astype(str)
+            + " | Qtd: "
+            + estoque_operacao["Quantidade"].astype(str)
+            + " | Status: "
+            + estoque_operacao["Status Estoque"].astype(str)
+        )
+
+        opcao_item = st.selectbox(
+            "Escolha o item",
+            estoque_operacao["Opção"].tolist()
+        )
+
+        indice_item = estoque_operacao[
+            estoque_operacao["Opção"] == opcao_item
+        ].index[0]
+
+        item_estoque = st.session_state.estoque.loc[indice_item]
+
+        sku_bloq = item_estoque["SKU"]
+        descricao_bloq = item_estoque["Descrição"]
+        local_bloq = item_estoque["Localização"]
+        lote_bloq = item_estoque["Lote"]
+        validade_bloq = item_estoque["Validade"]
+        quantidade_bloq = item_estoque["Quantidade"]
+        status_atual_bloq = item_estoque["Status Estoque"]
+
+        st.divider()
+
+        st.subheader("Dados do Item Selecionado")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.text_input("SKU", value=sku_bloq, disabled=True)
+            st.text_input("Descrição", value=descricao_bloq, disabled=True)
+
+        with col2:
+            st.text_input("Localização", value=local_bloq, disabled=True)
+            st.text_input("Lote", value=lote_bloq, disabled=True)
+
+        with col3:
+            st.text_input("Validade", value=validade_bloq, disabled=True)
+            st.text_input("Quantidade", value=str(quantidade_bloq), disabled=True)
+
+        st.info(f"Status atual do estoque: {status_atual_bloq}")
+
+        st.divider()
+
+        st.subheader("Alterar Status do Estoque")
+
+        with st.form("form_bloqueio_desbloqueio"):
+            novo_status = st.selectbox(
+                "Novo Status",
+                [
+                    "Disponível",
+                    "Quarentena",
+                    "Bloqueado"
+                ]
+            )
+
+            motivo_status = st.selectbox(
+                "Motivo",
+                [
+                    "Liberação de Qualidade",
+                    "Avaria",
+                    "Divergência de Recebimento",
+                    "Divergência de Inventário",
+                    "Produto em Análise",
+                    "Vencimento / Validade",
+                    "Bloqueio Operacional",
+                    "Desbloqueio Operacional",
+                    "Outro"
+                ]
+            )
+
+            observacao_status = st.text_area("Observação")
+
+            confirmar_status = st.form_submit_button("Confirmar Alteração de Status")
+
+            if confirmar_status:
+                if novo_status == status_atual_bloq:
+                    st.warning("O novo status é igual ao status atual. Nenhuma alteração foi realizada.")
+                else:
+                    st.session_state.estoque.at[indice_item, "Status Estoque"] = novo_status
+
+                    registrar_movimentacao(
+                        tipo="Alteração de Status",
+                        sku=sku_bloq,
+                        descricao=descricao_bloq,
+                        origem=status_atual_bloq,
+                        destino=novo_status,
+                        quantidade=quantidade_bloq,
+                        usuario=usuario_logado,
+                        observacao=(
+                            f"Motivo: {motivo_status}. "
+                            f"Localização: {local_bloq}. "
+                            f"Lote: {lote_bloq}. "
+                            f"Obs: {observacao_status}"
+                        )
+                    )
+
+                    st.success(f"Status alterado de '{status_atual_bloq}' para '{novo_status}' com sucesso.")
+
 
 # =========================
 # PEDIDOS / ORDENS
