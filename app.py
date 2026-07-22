@@ -96,6 +96,26 @@ def inicializar_dados():
             "Observação"
         ])
 
+    if "conferencias_entrada" not in st.session_state:
+        st.session_state.conferencias_entrada = pd.DataFrame(columns=[
+            "Data/Hora",
+            "Documento / Referência",
+            "Fornecedor",
+            "SKU",
+            "Descrição",
+            "Lote",
+            "Validade",
+            "Quantidade Esperada",
+            "Quantidade Recebida",
+            "Diferença",
+            "Resultado",
+            "Tratativa",
+            "Localização Destino",
+            "Status Estoque",
+            "Usuário",
+            "Observação"
+        ])
+
 def registrar_movimentacao(tipo, sku, descricao, origem, destino, quantidade, usuario, observacao):
     nova_mov = {
         "Data/Hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -155,7 +175,8 @@ modulo = st.sidebar.radio(
         "Cadastro de Produtos",
         "Cadastro de Localizações",
         "Recebimento",
-        "Consulta de Estoque",
+        "Conferência de Entrada",
+        "Consulta de Estoque",        
        "Movimentação Interna",
         "Ajustes de Estoque",
         "Bloqueio / Desbloqueio",
@@ -618,6 +639,240 @@ elif modulo == "Recebimento":
 
                 st.success("Recebimento registrado com sucesso.")
 
+
+# =========================
+# CONFERÊNCIA DE ENTRADA
+# =========================
+
+elif modulo == "Conferência de Entrada":
+    st.header("Conferência de Entrada")
+
+    st.write(
+        "Nesta área você pode conferir materiais recebidos antes de liberar para estoque, quarentena, bloqueio ou devolução."
+    )
+
+    if st.session_state.produtos.empty:
+        st.warning("Cadastre produtos antes de realizar conferência de entrada.")
+    else:
+        with st.form("form_conferencia_entrada"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                documento_conf = st.text_input("Documento / NF / Pedido / Referência")
+                fornecedor_conf = st.text_input("Fornecedor")
+                sku_conf = st.selectbox("SKU", st.session_state.produtos["SKU"].tolist())
+                descricao_conf = obter_descricao_produto(sku_conf)
+                st.text_input("Descrição", value=descricao_conf, disabled=True)
+
+                lote_conf = st.text_input("Lote")
+                validade_conf = st.date_input("Validade", value=date.today())
+
+            with col2:
+                quantidade_esperada = st.number_input(
+                    "Quantidade Esperada",
+                    min_value=0,
+                    step=1
+                )
+
+                quantidade_recebida = st.number_input(
+                    "Quantidade Recebida",
+                    min_value=0,
+                    step=1
+                )
+
+                if st.session_state.localizacoes.empty:
+                    destino_conf = st.text_input("Localização de Destino", value="RECEBIMENTO")
+                else:
+                    destino_conf = st.selectbox(
+                        "Localização de Destino",
+                        st.session_state.localizacoes["Código"].tolist()
+                    )
+
+                resultado_conf = st.selectbox(
+                    "Resultado da Conferência",
+                    [
+                        "Conforme",
+                        "Falta",
+                        "Excesso",
+                        "Avaria",
+                        "Não conformidade",
+                        "Divergência documental",
+                        "Outro"
+                    ]
+                )
+
+                tratativa_conf = st.selectbox(
+                    "Tratativa",
+                    [
+                        "Liberar para Estoque Disponível",
+                        "Enviar para Quarentena",
+                        "Bloquear Estoque",
+                        "Recusar / Devolver ao Fornecedor"
+                    ]
+                )
+
+            observacao_conf = st.text_area("Observação da Conferência")
+
+            confirmar_conf = st.form_submit_button("Registrar Conferência de Entrada")
+
+            if confirmar_conf:
+                diferenca_conf = quantidade_recebida - quantidade_esperada
+
+                if documento_conf == "":
+                    st.error("Informe o documento, NF, pedido ou referência.")
+                elif quantidade_recebida == 0:
+                    st.error("A quantidade recebida deve ser maior que zero.")
+                else:
+                    if tratativa_conf == "Liberar para Estoque Disponível":
+                        status_estoque_conf = "Disponível"
+                    elif tratativa_conf == "Enviar para Quarentena":
+                        status_estoque_conf = "Quarentena"
+                    elif tratativa_conf == "Bloquear Estoque":
+                        status_estoque_conf = "Bloqueado"
+                    else:
+                        status_estoque_conf = "Fora do Estoque"
+
+                    nova_conferencia = {
+                        "Data/Hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        "Documento / Referência": documento_conf,
+                        "Fornecedor": fornecedor_conf,
+                        "SKU": sku_conf,
+                        "Descrição": descricao_conf,
+                        "Lote": lote_conf,
+                        "Validade": validade_conf.strftime("%d/%m/%Y"),
+                        "Quantidade Esperada": quantidade_esperada,
+                        "Quantidade Recebida": quantidade_recebida,
+                        "Diferença": diferenca_conf,
+                        "Resultado": resultado_conf,
+                        "Tratativa": tratativa_conf,
+                        "Localização Destino": destino_conf,
+                        "Status Estoque": status_estoque_conf,
+                        "Usuário": usuario_logado,
+                        "Observação": observacao_conf
+                    }
+
+                    st.session_state.conferencias_entrada = pd.concat(
+                        [
+                            st.session_state.conferencias_entrada,
+                            pd.DataFrame([nova_conferencia])
+                        ],
+                        ignore_index=True
+                    )
+
+                    if tratativa_conf != "Recusar / Devolver ao Fornecedor":
+                        novo_estoque_conf = {
+                            "SKU": sku_conf,
+                            "Descrição": descricao_conf,
+                            "Localização": destino_conf,
+                            "Lote": lote_conf,
+                            "Validade": validade_conf.strftime("%d/%m/%Y"),
+                            "Quantidade": quantidade_recebida,
+                            "Status Estoque": status_estoque_conf
+                        }
+
+                        st.session_state.estoque = pd.concat(
+                            [
+                                st.session_state.estoque,
+                                pd.DataFrame([novo_estoque_conf])
+                            ],
+                            ignore_index=True
+                        )
+
+                    registrar_movimentacao(
+                        tipo="Conferência de Entrada",
+                        sku=sku_conf,
+                        descricao=descricao_conf,
+                        origem=fornecedor_conf if fornecedor_conf != "" else "Fornecedor",
+                        destino=destino_conf if tratativa_conf != "Recusar / Devolver ao Fornecedor" else "Recusado / Devolver ao Fornecedor",
+                        quantidade=quantidade_recebida,
+                        usuario=usuario_logado,
+                        observacao=(
+                            f"Documento: {documento_conf}. "
+                            f"Esperado: {quantidade_esperada}. "
+                            f"Recebido: {quantidade_recebida}. "
+                            f"Diferença: {diferenca_conf}. "
+                            f"Resultado: {resultado_conf}. "
+                            f"Tratativa: {tratativa_conf}. "
+                            f"Lote: {lote_conf}. "
+                            f"Status estoque: {status_estoque_conf}. "
+                            f"Obs: {observacao_conf}"
+                        )
+                    )
+
+                    if tratativa_conf == "Recusar / Devolver ao Fornecedor":
+                        st.warning("Conferência registrada. O material não foi lançado no estoque.")
+                    else:
+                        st.success("Conferência registrada e material lançado no estoque com sucesso.")
+
+    st.divider()
+
+    st.subheader("Histórico de Conferências de Entrada")
+
+    if st.session_state.conferencias_entrada.empty:
+        st.info("Ainda não existem conferências de entrada registradas.")
+    else:
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            filtro_doc_conf = st.text_input("Filtrar por Documento", key="filtro_doc_conf")
+
+        with col2:
+            filtro_sku_conf = st.text_input("Filtrar por SKU", key="filtro_sku_conf")
+
+        with col3:
+            filtro_resultado_conf = st.selectbox(
+                "Filtrar por Resultado",
+                [
+                    "Todos",
+                    "Conforme",
+                    "Falta",
+                    "Excesso",
+                    "Avaria",
+                    "Não conformidade",
+                    "Divergência documental",
+                    "Outro"
+                ],
+                key="filtro_resultado_conf"
+            )
+
+        df_conf = st.session_state.conferencias_entrada.copy()
+
+        if filtro_doc_conf:
+            df_conf = df_conf[
+                df_conf["Documento / Referência"].astype(str).str.contains(
+                    filtro_doc_conf,
+                    case=False,
+                    na=False
+                )
+            ]
+
+        if filtro_sku_conf:
+            df_conf = df_conf[
+                df_conf["SKU"].astype(str).str.contains(
+                    filtro_sku_conf,
+                    case=False,
+                    na=False
+                )
+            ]
+
+        if filtro_resultado_conf != "Todos":
+            df_conf = df_conf[
+                df_conf["Resultado"] == filtro_resultado_conf
+            ]
+
+        st.dataframe(df_conf, use_container_width=True)
+
+        st.subheader("Resumo das Conferências")
+
+        if df_conf.empty:
+            st.info("Nenhuma conferência encontrada com os filtros selecionados.")
+        else:
+            resumo_conf = df_conf.groupby(
+                ["Resultado", "Tratativa"],
+                as_index=False
+            )["Quantidade Recebida"].sum()
+
+            st.dataframe(resumo_conf, use_container_width=True)
 
 # =========================
 # CONSULTA DE ESTOQUE
