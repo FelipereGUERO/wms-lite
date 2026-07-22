@@ -187,106 +187,128 @@ def gerar_codigo_barras_imagem(texto_codigo):
     return imagem_codigo
 
 
-def criar_etiqueta_visual(titulo, linhas_texto, texto_codigo_barras):
-    largura = 1000
-    altura_base = 360
-    altura_linhas = len(linhas_texto) * 28
-    altura = altura_base + altura_linhas
+def gerar_codigo_barras_imagem(texto_codigo):
+    texto_codigo = str(texto_codigo).strip()
 
-    etiqueta = Image.new("RGB", (largura, altura), "white")
-    desenho = ImageDraw.Draw(etiqueta)
-
-    fonte = ImageFont.load_default()
-
-    # Borda
-    desenho.rectangle(
-        [(10, 10), (largura - 10, altura - 10)],
-        outline="black",
-        width=3
-    )
-
-    y = 25
-
-    # Título
-    desenho.text(
-        (30, y),
-        titulo,
-        fill="black",
-        font=fonte
-    )
-
-    y += 40
-
-    # Linhas de informação
-    for linha in linhas_texto:
-        desenho.text(
-            (30, y),
-            str(linha),
-            fill="black",
-            font=fonte
-        )
-        y += 28
-
-    y += 10
-
-    # Código de barras
-    imagem_codigo = gerar_codigo_barras_imagem(texto_codigo_barras)
-
-    largura_codigo_max = largura - 80
-    altura_codigo_max = 170
-
-    imagem_codigo.thumbnail((largura_codigo_max, altura_codigo_max))
-
-    x_codigo = int((largura - imagem_codigo.width) / 2)
-
-    etiqueta.paste(imagem_codigo, (x_codigo, y))
-
-    y += imagem_codigo.height + 15
-
-    # Texto abaixo do código
-    texto_codigo = f"Código: {texto_codigo_barras}"
-
-    desenho.text(
-        (30, y),
-        texto_codigo,
-        fill="black",
-        font=fonte
-    )
-
-    saida = BytesIO()
-    etiqueta.save(saida, format="PNG")
-    saida.seek(0)
-
-    return saida.getvalue()
-
-def gerar_codigo_barras_imagem(valor_codigo):
-    valor_codigo = str(valor_codigo).strip()
-
-    if valor_codigo == "":
-        valor_codigo = "SEM-CODIGO"
+    if texto_codigo == "":
+        texto_codigo = "SEM-CODIGO"
 
     Code128 = barcode.get_barcode_class("code128")
-    codigo = Code128(valor_codigo, writer=ImageWriter())
+
+    codigo = Code128(
+        texto_codigo,
+        writer=ImageWriter()
+    )
 
     buffer = BytesIO()
 
     codigo.write(
         buffer,
         options={
-            "write_text": False,
             "module_width": 0.35,
-            "module_height": 18,
-            "quiet_zone": 2,
-            "font_size": 0,
-            "text_distance": 1
+            "module_height": 25,
+            "font_size": 12,
+            "text_distance": 6,
+            "quiet_zone": 4,
+            "write_text": True
         }
     )
 
     buffer.seek(0)
+    imagem_codigo = Image.open(buffer).convert("RGB")
 
-    imagem = Image.open(buffer).convert("RGB")
+    return imagem_codigo
+
+
+def criar_etiqueta_visual(titulo, linhas_texto, texto_codigo_barras):
+    largura = 1000
+    altura = 620
+
+    imagem = Image.new("RGB", (largura, altura), "white")
+    desenho = ImageDraw.Draw(imagem)
+
+    try:
+        fonte_titulo = ImageFont.truetype("DejaVuSans-Bold.ttf", 34)
+        fonte_texto = ImageFont.truetype("DejaVuSans.ttf", 24)
+        fonte_texto_negrito = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
+        fonte_rodape = ImageFont.truetype("DejaVuSans.ttf", 18)
+    except:
+        fonte_titulo = ImageFont.load_default()
+        fonte_texto = ImageFont.load_default()
+        fonte_texto_negrito = ImageFont.load_default()
+        fonte_rodape = ImageFont.load_default()
+
+    # Borda da etiqueta
+    margem = 20
+    desenho.rectangle(
+        [margem, margem, largura - margem, altura - margem],
+        outline="black",
+        width=3
+    )
+
+    # Título
+    y = 40
+    desenho.text(
+        (40, y),
+        titulo,
+        fill="black",
+        font=fonte_titulo
+    )
+
+    y += 55
+
+    # Linhas de informação
+    for linha in linhas_texto:
+        desenho.text(
+            (40, y),
+            str(linha),
+            fill="black",
+            font=fonte_texto
+        )
+        y += 34
+
+    # Separador
+    y += 10
+    desenho.line(
+        [(40, y), (largura - 40, y)],
+        fill="black",
+        width=2
+    )
+
+    y += 20
+
+    # Código de barras
+    imagem_codigo = gerar_codigo_barras_imagem(texto_codigo_barras)
+
+    largura_codigo = largura - 120
+    altura_codigo = 220
+
+    imagem_codigo = imagem_codigo.resize(
+        (largura_codigo, altura_codigo)
+    )
+
+    x_codigo = 60
+    imagem.paste(imagem_codigo, (x_codigo, y))
+
+    y += altura_codigo + 20
+
+    # Texto técnico do código
+    desenho.text(
+        (40, y),
+        f"Código: {texto_codigo_barras}",
+        fill="black",
+        font=fonte_rodape
+    )
 
     return imagem
+
+
+def converter_imagem_para_bytes(imagem):
+    buffer = BytesIO()
+    imagem.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
 
 
 def imagem_para_bytes(imagem):
