@@ -183,7 +183,8 @@ modulo = st.sidebar.radio(
         "Gestão de Lotes e Validades",
         "Rastreabilidade",
         "Pedidos / Ordens",
-        "Picking / Separação",
+        "Gestão de Status de Pedidos",
+        "Picking / Separação",        
         "Expedição / Conferência",
         "Devoluções",
         "Inventário",        
@@ -1878,6 +1879,135 @@ elif modulo == "Pedidos / Ordens":
 
         st.dataframe(df_pedidos, use_container_width=True)
 
+
+# =========================
+# GESTÃO DE STATUS DE PEDIDOS
+# =========================
+
+elif modulo == "Gestão de Status de Pedidos":
+    st.header("Gestão de Status de Pedidos")
+
+    st.write(
+        "Nesta área você pode cancelar, reabrir ou alterar o status de pedidos com registro de motivo no histórico."
+    )
+
+    if st.session_state.pedidos.empty:
+        st.warning("Não existem pedidos cadastrados para gerenciar.")
+    else:
+        pedidos_status = st.session_state.pedidos.copy()
+
+        pedidos_status["Opção"] = (
+            pedidos_status["Pedido"].astype(str)
+            + " | SKU: "
+            + pedidos_status["SKU"].astype(str)
+            + " | Qtd: "
+            + pedidos_status["Quantidade"].astype(str)
+            + " | Status Atual: "
+            + pedidos_status["Status"].astype(str)
+        )
+
+        opcao_pedido_status = st.selectbox(
+            "Selecione o Pedido / Ordem",
+            pedidos_status["Opção"].tolist()
+        )
+
+        indice_pedido_status = pedidos_status[
+            pedidos_status["Opção"] == opcao_pedido_status
+        ].index[0]
+
+        pedido_status = st.session_state.pedidos.loc[indice_pedido_status]
+
+        numero_pedido_status = pedido_status["Pedido"]
+        cliente_destino_status = pedido_status["Cliente / Destino"]
+        sku_status = pedido_status["SKU"]
+        descricao_status = pedido_status["Descrição"]
+        quantidade_status = pedido_status["Quantidade"]
+        prioridade_status = pedido_status["Prioridade"]
+        status_atual_pedido = pedido_status["Status"]
+
+        st.divider()
+
+        st.subheader("Dados do Pedido Selecionado")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.text_input("Pedido", value=numero_pedido_status, disabled=True)
+            st.text_input("Cliente / Destino", value=cliente_destino_status, disabled=True)
+
+        with col2:
+            st.text_input("SKU", value=sku_status, disabled=True)
+            st.text_input("Descrição", value=descricao_status, disabled=True)
+
+        with col3:
+            st.text_input("Quantidade", value=str(quantidade_status), disabled=True)
+            st.text_input("Status Atual", value=status_atual_pedido, disabled=True)
+
+        st.divider()
+
+        st.subheader("Alterar Status")
+
+        with st.form("form_gestao_status_pedidos"):
+            novo_status_pedido = st.selectbox(
+                "Novo Status",
+                [
+                    "Criado",
+                    "Aguardando Picking",
+                    "Em Picking",
+                    "Separado",
+                    "Conferido",
+                    "Expedido",
+                    "Cancelado"
+                ]
+            )
+
+            motivo_status_pedido = st.selectbox(
+                "Motivo",
+                [
+                    "Erro de cadastro",
+                    "Solicitação do cliente",
+                    "Falta de estoque",
+                    "Erro operacional",
+                    "Divergência na separação",
+                    "Divergência na expedição",
+                    "Reabertura para correção",
+                    "Cancelamento comercial",
+                    "Outro"
+                ]
+            )
+
+            observacao_status_pedido = st.text_area("Observação")
+
+            confirmar_status_pedido = st.form_submit_button("Confirmar Alteração de Status")
+
+            if confirmar_status_pedido:
+                if novo_status_pedido == status_atual_pedido:
+                    st.warning("O novo status é igual ao status atual. Nenhuma alteração foi realizada.")
+                elif observacao_status_pedido.strip() == "":
+                    st.error("Informe uma observação para registrar o motivo da alteração.")
+                else:
+                    st.session_state.pedidos.at[indice_pedido_status, "Status"] = novo_status_pedido
+
+                    registrar_movimentacao(
+                        tipo="Alteração de Status de Pedido",
+                        sku=sku_status,
+                        descricao=descricao_status,
+                        origem=status_atual_pedido,
+                        destino=novo_status_pedido,
+                        quantidade=quantidade_status,
+                        usuario=usuario_logado,
+                        observacao=(
+                            f"Pedido: {numero_pedido_status}. "
+                            f"Cliente/Destino: {cliente_destino_status}. "
+                            f"Motivo: {motivo_status_pedido}. "
+                            f"Obs: {observacao_status_pedido}"
+                        )
+                    )
+
+                    st.success(
+                        f"Status do pedido {numero_pedido_status} alterado de "
+                        f"'{status_atual_pedido}' para '{novo_status_pedido}' com sucesso."
+                    )
 
 # =========================
 # PICKING / SEPARAÇÃO
