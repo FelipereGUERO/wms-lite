@@ -141,7 +141,8 @@ modulo = st.sidebar.radio(
        "Movimentação Interna",
         "Ajustes de Estoque",
         "Bloqueio / Desbloqueio",
-        "Pedidos / Ordens",
+        "Gestão de Lotes e Validades",
+        "Pedidos / Ordens",        
         "Picking / Separação",        
         "Expedição / Conferência",
         "Inventário",        
@@ -815,6 +816,201 @@ elif modulo == "Bloqueio / Desbloqueio":
                     )
 
                     st.success(f"Status alterado de '{status_atual_bloq}' para '{novo_status}' com sucesso.")
+
+# =========================
+# GESTÃO DE LOTES E VALIDADES
+# =========================
+
+elif modulo == "Gestão de Lotes e Validades":
+    st.header("Gestão de Lotes e Validades")
+
+    st.write(
+        "Nesta área você pode consultar lotes, validades, itens vencidos e itens próximos do vencimento."
+    )
+
+    if st.session_state.estoque.empty:
+        st.warning("Não há estoque cadastrado para análise de lotes e validades.")
+    else:
+        df_lotes = st.session_state.estoque.copy()
+
+        # Converter validade para data
+        df_lotes["Data Validade"] = pd.to_datetime(
+            df_lotes["Validade"],
+            format="%d/%m/%Y",
+            errors="coerce"
+        )
+
+        hoje = pd.Timestamp(date.today())
+
+        df_lotes["Dias para Vencer"] = (
+            df_lotes["Data Validade"] - hoje
+        ).dt.days
+
+        def classificar_validade(dias):
+            if pd.isna(dias):
+                return "Sem validade informada"
+            elif dias < 0:
+                return "Vencido"
+            elif dias <= 30:
+                return "Vence em até 30 dias"
+            elif dias <= 60:
+                return "Vence em até 60 dias"
+            elif dias <= 90:
+                return "Vence em até 90 dias"
+            else:
+                return "Dentro da validade"
+
+        df_lotes["Situação Validade"] = df_lotes["Dias para Vencer"].apply(classificar_validade)
+
+        st.subheader("Indicadores de Validade")
+
+        total_lotes = df_lotes["Lote"].nunique()
+        itens_vencidos = len(df_lotes[df_lotes["Situação Validade"] == "Vencido"])
+        itens_30_dias = len(df_lotes[df_lotes["Situação Validade"] == "Vence em até 30 dias"])
+        itens_sem_validade = len(df_lotes[df_lotes["Situação Validade"] == "Sem validade informada"])
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Lotes Diferentes", total_lotes)
+        col2.metric("Itens Vencidos", itens_vencidos)
+        col3.metric("Vencem em até 30 dias", itens_30_dias)
+        col4.metric("Sem Validade Informada", itens_sem_validade)
+
+        st.divider()
+
+        st.subheader("Filtros")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            filtro_sku_lote = st.text_input("Filtrar por SKU")
+
+        with col2:
+            filtro_lote = st.text_input("Filtrar por Lote")
+
+        with col3:
+            filtro_status_estoque = st.selectbox(
+                "Status do Estoque",
+                [
+                    "Todos",
+                    "Disponível",
+                    "Quarentena",
+                    "Bloqueado"
+                ]
+            )
+
+        with col4:
+            filtro_validade = st.selectbox(
+                "Situação da Validade",
+                [
+                    "Todos",
+                    "Vencido",
+                    "Vence em até 30 dias",
+                    "Vence em até 60 dias",
+                    "Vence em até 90 dias",
+                    "Dentro da validade",
+                    "Sem validade informada"
+                ]
+            )
+
+        df_filtrado = df_lotes.copy()
+
+        if filtro_sku_lote:
+            df_filtrado = df_filtrado[
+                df_filtrado["SKU"].astype(str).str.contains(
+                    filtro_sku_lote,
+                    case=False,
+                    na=False
+                )
+            ]
+
+        if filtro_lote:
+            df_filtrado = df_filtrado[
+                df_filtrado["Lote"].astype(str).str.contains(
+                    filtro_lote,
+                    case=False,
+                    na=False
+                )
+            ]
+
+        if filtro_status_estoque != "Todos":
+            df_filtrado = df_filtrado[
+                df_filtrado["Status Estoque"] == filtro_status_estoque
+            ]
+
+        if filtro_validade != "Todos":
+            df_filtrado = df_filtrado[
+                df_filtrado["Situação Validade"] == filtro_validade
+            ]
+
+        st.divider()
+
+        st.subheader("Consulta Detalhada por Lote e Validade")
+
+        colunas_exibir = [
+            "SKU",
+            "Descrição",
+            "Localização",
+            "Lote",
+            "Validade",
+            "Quantidade",
+            "Status Estoque",
+            "Dias para Vencer",
+            "Situação Validade"
+        ]
+
+        st.dataframe(
+            df_filtrado[colunas_exibir],
+            use_container_width=True
+        )
+
+        st.divider()
+
+        st.subheader("Resumo por SKU, Lote e Validade")
+
+        if df_filtrado.empty:
+            st.info("Nenhum item encontrado com os filtros selecionados.")
+        else:
+            resumo_lotes = df_filtrado.groupby(
+                [
+                    "SKU",
+                    "Descrição",
+                    "Lote",
+                    "Validade",
+                    "Status Estoque",
+                    "Situação Validade"
+                ],
+                as_index=False
+            )["Quantidade"].sum()
+
+            st.dataframe(
+                resumo_lotes,
+                use_container_width=True
+            )
+
+        st.divider()
+
+        st.subheader("Alertas Operacionais")
+
+        vencidos = df_lotes[df_lotes["Situação Validade"] == "Vencido"]
+        proximos_30 = df_lotes[df_lotes["Situação Validade"] == "Vence em até 30 dias"]
+
+        if vencidos.empty and proximos_30.empty:
+            st.success("Não há itens vencidos ou vencendo em até 30 dias.")
+        else:
+            if not vencidos.empty:
+                st.error("Existem itens vencidos. Recomenda-se avaliar bloqueio, segregação ou descarte.")
+                st.dataframe(
+                    vencidos[colunas_exibir],
+                    use_container_width=True
+                )
+
+            if not proximos_30.empty:
+                st.warning("Existem itens vencendo em até 30 dias. Recomenda-se priorizar consumo, picking ou análise.")
+                st.dataframe(
+                    proximos_30[colunas_exibir],
+                    use_container_width=True
+                )
 
 
 # =========================
