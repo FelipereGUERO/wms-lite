@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 
 st.set_page_config(
     page_title="WMS Lite",
@@ -8,19 +8,95 @@ st.set_page_config(
     layout="wide"
 )
 
-# =========================
-# TÍTULO DO SISTEMA
-# =========================
+# =========================================================
+# CONFIGURAÇÃO INICIAL
+# =========================================================
 
 st.title("📦 WMS Lite")
-st.caption("Sistema básico para controle de estoque, recebimento, movimentações, picking e inventário.")
+st.caption("Sistema simplificado para controle de estoque, recebimento, movimentações, picking e inventário.")
 
-# =========================
+# =========================================================
+# BANCO TEMPORÁRIO EM MEMÓRIA
+# Futuramente substituiremos por banco de dados real.
+# =========================================================
+
+if "produtos" not in st.session_state:
+    st.session_state.produtos = pd.DataFrame(
+        columns=[
+            "SKU",
+            "Descrição",
+            "Unidade",
+            "Categoria",
+            "Código de Barras",
+            "Estoque Mínimo",
+            "Controla Lote",
+            "Controla Validade",
+            "Status"
+        ]
+    )
+
+if "localizacoes" not in st.session_state:
+    st.session_state.localizacoes = pd.DataFrame(
+        columns=[
+            "Código",
+            "Tipo",
+            "Rua",
+            "Coluna",
+            "Nível",
+            "Posição",
+            "Status"
+        ]
+    )
+
+if "estoque" not in st.session_state:
+    st.session_state.estoque = pd.DataFrame(
+        columns=[
+            "SKU",
+            "Produto",
+            "Localização",
+            "Lote",
+            "Validade",
+            "Quantidade",
+            "Status Estoque"
+        ]
+    )
+
+if "movimentacoes" not in st.session_state:
+    st.session_state.movimentacoes = pd.DataFrame(
+        columns=[
+            "Data/Hora",
+            "Tipo",
+            "SKU",
+            "Produto",
+            "Origem",
+            "Destino",
+            "Quantidade",
+            "Usuário",
+            "Observação"
+        ]
+    )
+
+if "inventario" not in st.session_state:
+    st.session_state.inventario = pd.DataFrame(
+        columns=[
+            "Data",
+            "SKU",
+            "Produto",
+            "Localização",
+            "Qtd Sistema",
+            "Qtd Física",
+            "Diferença",
+            "Responsável",
+            "Status"
+        ]
+    )
+
+# =========================================================
 # MENU LATERAL
-# =========================
+# =========================================================
 
-menu = st.sidebar.selectbox(
-    "Menu principal",
+menu = st.sidebar.radio(
+    "Menu",
     [
         "Dashboard",
         "Cadastro de Produtos",
@@ -28,325 +104,480 @@ menu = st.sidebar.selectbox(
         "Recebimento",
         "Consulta de Estoque",
         "Movimentação Interna",
-        "Picking",
-        "Expedição",
         "Inventário",
-        "Relatórios"
+        "Histórico de Movimentações"
     ]
 )
 
-# =========================
-# BASE TEMPORÁRIA EM MEMÓRIA
-# =========================
-# Nesta primeira versão, os dados ficam temporários.
-# Depois vamos evoluir para salvar em arquivos e, no futuro, banco de dados.
-
-if "produtos" not in st.session_state:
-    st.session_state.produtos = []
-
-if "localizacoes" not in st.session_state:
-    st.session_state.localizacoes = []
-
-if "estoque" not in st.session_state:
-    st.session_state.estoque = []
-
-if "movimentacoes" not in st.session_state:
-    st.session_state.movimentacoes = []
-
-
-# =========================
+# =========================================================
 # DASHBOARD
-# =========================
+# =========================================================
 
 if menu == "Dashboard":
-    st.header("Dashboard Geral")
+    st.header("📊 Dashboard Geral")
 
-    total_produtos = len(st.session_state.produtos)
-    total_localizacoes = len(st.session_state.localizacoes)
-    total_itens_estoque = len(st.session_state.estoque)
+    total_skus = st.session_state.produtos["SKU"].nunique()
+    total_localizacoes = st.session_state.localizacoes["Código"].nunique()
 
-    quantidade_total = 0
-    for item in st.session_state.estoque:
-        quantidade_total += item["Quantidade"]
+    if len(st.session_state.estoque) > 0:
+        total_estoque = st.session_state.estoque["Quantidade"].sum()
+    else:
+        total_estoque = 0
+
+    total_movimentacoes = len(st.session_state.movimentacoes)
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Produtos cadastrados", total_produtos)
-    col2.metric("Localizações cadastradas", total_localizacoes)
-    col3.metric("Itens em estoque", total_itens_estoque)
-    col4.metric("Quantidade total", quantidade_total)
+    col1.metric("SKUs Cadastrados", total_skus)
+    col2.metric("Localizações", total_localizacoes)
+    col3.metric("Saldo Total em Estoque", total_estoque)
+    col4.metric("Movimentações", total_movimentacoes)
 
-    st.subheader("Últimas movimentações")
+    st.divider()
 
-    if st.session_state.movimentacoes:
-        df_mov = pd.DataFrame(st.session_state.movimentacoes)
-        st.dataframe(df_mov, use_container_width=True)
+    st.subheader("Estoque Atual")
+
+    if len(st.session_state.estoque) == 0:
+        st.info("Ainda não há estoque registrado.")
     else:
-        st.info("Nenhuma movimentação registrada até o momento.")
+        st.dataframe(st.session_state.estoque, use_container_width=True)
 
-
-# =========================
+# =========================================================
 # CADASTRO DE PRODUTOS
-# =========================
+# =========================================================
 
 elif menu == "Cadastro de Produtos":
-    st.header("Cadastro de Produtos")
+    st.header("🏷️ Cadastro de Produtos")
 
     with st.form("form_produto"):
-        sku = st.text_input("SKU / Código do Produto")
-        descricao = st.text_input("Descrição")
-        unidade = st.selectbox("Unidade de Medida", ["UN", "KG", "M", "CX", "PC"])
-        categoria = st.text_input("Categoria / Família")
-        estoque_minimo = st.number_input("Estoque mínimo", min_value=0, step=1)
-        ativo = st.selectbox("Status", ["Ativo", "Inativo"])
+        col1, col2 = st.columns(2)
 
-        salvar = st.form_submit_button("Salvar produto")
+        with col1:
+            sku = st.text_input("SKU")
+            descricao = st.text_input("Descrição do Produto")
+            unidade = st.selectbox("Unidade", ["UN", "CX", "KG", "LT", "MT", "PC"])
+            categoria = st.text_input("Categoria")
+
+        with col2:
+            codigo_barras = st.text_input("Código de Barras")
+            estoque_minimo = st.number_input("Estoque Mínimo", min_value=0, step=1)
+            controla_lote = st.selectbox("Controla Lote?", ["Sim", "Não"])
+            controla_validade = st.selectbox("Controla Validade?", ["Sim", "Não"])
+            status = st.selectbox("Status", ["Ativo", "Inativo"])
+
+        salvar = st.form_submit_button("Salvar Produto")
 
         if salvar:
-            if sku and descricao:
-                produto = {
-                    "SKU": sku,
-                    "Descrição": descricao,
-                    "Unidade": unidade,
-                    "Categoria": categoria,
-                    "Estoque mínimo": estoque_minimo,
-                    "Status": ativo
-                }
-
-                st.session_state.produtos.append(produto)
-                st.success("Produto cadastrado com sucesso.")
+            if sku == "" or descricao == "":
+                st.error("Informe pelo menos o SKU e a descrição do produto.")
             else:
-                st.warning("Preencha pelo menos o SKU e a descrição.")
+                novo_produto = pd.DataFrame(
+                    [{
+                        "SKU": sku,
+                        "Descrição": descricao,
+                        "Unidade": unidade,
+                        "Categoria": categoria,
+                        "Código de Barras": codigo_barras,
+                        "Estoque Mínimo": estoque_minimo,
+                        "Controla Lote": controla_lote,
+                        "Controla Validade": controla_validade,
+                        "Status": status
+                    }]
+                )
 
-    st.subheader("Produtos cadastrados")
+                st.session_state.produtos = pd.concat(
+                    [st.session_state.produtos, novo_produto],
+                    ignore_index=True
+                )
 
-    if st.session_state.produtos:
-        df_produtos = pd.DataFrame(st.session_state.produtos)
-        st.dataframe(df_produtos, use_container_width=True)
-    else:
-        st.info("Nenhum produto cadastrado.")
+                st.success("Produto cadastrado com sucesso.")
 
+    st.subheader("Produtos Cadastrados")
+    st.dataframe(st.session_state.produtos, use_container_width=True)
 
-# =========================
+# =========================================================
 # CADASTRO DE LOCALIZAÇÕES
-# =========================
+# =========================================================
 
 elif menu == "Cadastro de Localizações":
-    st.header("Cadastro de Localizações")
+    st.header("📍 Cadastro de Localizações")
 
     with st.form("form_localizacao"):
-        codigo_local = st.text_input("Código da localização")
-        tipo_local = st.selectbox(
-            "Tipo de localização",
-            ["Recebimento", "Estoque", "Picking", "Expedição", "Quarentena", "Buffer"]
-        )
-        corredor = st.text_input("Corredor")
-        coluna = st.text_input("Coluna")
-        nivel = st.text_input("Nível")
-        status = st.selectbox("Status", ["Ativa", "Bloqueada", "Inativa"])
+        col1, col2 = st.columns(2)
 
-        salvar = st.form_submit_button("Salvar localização")
+        with col1:
+            codigo = st.text_input("Código da Localização")
+            tipo = st.selectbox(
+                "Tipo",
+                [
+                    "Recebimento",
+                    "Estoque",
+                    "Picking",
+                    "Expedição",
+                    "Quarentena",
+                    "Buffer"
+                ]
+            )
+            rua = st.text_input("Rua")
 
-        if salvar:
-            if codigo_local:
-                localizacao = {
-                    "Localização": codigo_local,
-                    "Tipo": tipo_local,
-                    "Corredor": corredor,
-                    "Coluna": coluna,
-                    "Nível": nivel,
-                    "Status": status
-                }
+        with col2:
+            coluna = st.text_input("Coluna")
+            nivel = st.text_input("Nível")
+            posicao = st.text_input("Posição")
+            status_local = st.selectbox("Status", ["Ativa", "Bloqueada", "Inativa"])
 
-                st.session_state.localizacoes.append(localizacao)
-                st.success("Localização cadastrada com sucesso.")
+        salvar_local = st.form_submit_button("Salvar Localização")
+
+        if salvar_local:
+            if codigo == "":
+                st.error("Informe o código da localização.")
             else:
-                st.warning("Informe o código da localização.")
+                nova_localizacao = pd.DataFrame(
+                    [{
+                        "Código": codigo,
+                        "Tipo": tipo,
+                        "Rua": rua,
+                        "Coluna": coluna,
+                        "Nível": nivel,
+                        "Posição": posicao,
+                        "Status": status_local
+                    }]
+                )
 
-    st.subheader("Localizações cadastradas")
+                st.session_state.localizacoes = pd.concat(
+                    [st.session_state.localizacoes, nova_localizacao],
+                    ignore_index=True
+                )
 
-    if st.session_state.localizacoes:
-        df_locais = pd.DataFrame(st.session_state.localizacoes)
-        st.dataframe(df_locais, use_container_width=True)
-    else:
-        st.info("Nenhuma localização cadastrada.")
+                st.success("Localização cadastrada com sucesso.")
 
+    st.subheader("Localizações Cadastradas")
+    st.dataframe(st.session_state.localizacoes, use_container_width=True)
 
-# =========================
+# =========================================================
 # RECEBIMENTO
-# =========================
+# =========================================================
 
 elif menu == "Recebimento":
-    st.header("Recebimento de Materiais")
+    st.header("📥 Recebimento de Materiais")
 
-    produtos_disponiveis = [p["SKU"] for p in st.session_state.produtos]
-    localizacoes_disponiveis = [l["Localização"] for l in st.session_state.localizacoes]
-
-    if not produtos_disponiveis:
-        st.warning("Cadastre pelo menos um produto antes de realizar o recebimento.")
-    elif not localizacoes_disponiveis:
-        st.warning("Cadastre pelo menos uma localização antes de realizar o recebimento.")
+    if len(st.session_state.produtos) == 0:
+        st.warning("Cadastre pelo menos um produto antes de realizar recebimentos.")
+    elif len(st.session_state.localizacoes) == 0:
+        st.warning("Cadastre pelo menos uma localização antes de realizar recebimentos.")
     else:
         with st.form("form_recebimento"):
-            sku = st.selectbox("Produto / SKU", produtos_disponiveis)
-            quantidade = st.number_input("Quantidade recebida", min_value=1, step=1)
-            lote = st.text_input("Lote")
-            validade = st.date_input("Data de validade")
-            localizacao = st.selectbox("Localização de destino", localizacoes_disponiveis)
+            col1, col2 = st.columns(2)
+
+            with col1:
+                sku_receb = st.selectbox(
+                    "SKU",
+                    st.session_state.produtos["SKU"].tolist()
+                )
+
+                produto_nome = st.session_state.produtos.loc[
+                    st.session_state.produtos["SKU"] == sku_receb,
+                    "Descrição"
+                ].values[0]
+
+                st.text_input("Produto", value=produto_nome, disabled=True)
+
+                quantidade = st.number_input(
+                    "Quantidade Recebida",
+                    min_value=1,
+                    step=1
+                )
+
+                lote = st.text_input("Lote")
+
+            with col2:
+                validade = st.date_input("Validade", value=date.today())
+
+                local_destino = st.selectbox(
+                    "Localização de Destino",
+                    st.session_state.localizacoes["Código"].tolist()
+                )
+
+                status_estoque = st.selectbox(
+                    "Status do Estoque",
+                    ["Disponível", "Bloqueado", "Quarentena"]
+                )
+
+                usuario = st.text_input("Usuário / Operador")
+
             observacao = st.text_area("Observação")
 
-            salvar = st.form_submit_button("Confirmar recebimento")
+            receber = st.form_submit_button("Confirmar Recebimento")
 
-            if salvar:
-                entrada = {
-                    "Data": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                    "SKU": sku,
-                    "Quantidade": quantidade,
-                    "Lote": lote,
-                    "Validade": validade.strftime("%d/%m/%Y"),
-                    "Localização": localizacao,
-                    "Status": "Disponível"
-                }
+            if receber:
+                novo_estoque = pd.DataFrame(
+                    [{
+                        "SKU": sku_receb,
+                        "Produto": produto_nome,
+                        "Localização": local_destino,
+                        "Lote": lote,
+                        "Validade": validade,
+                        "Quantidade": quantidade,
+                        "Status Estoque": status_estoque
+                    }]
+                )
 
-                movimento = {
-                    "Data": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                    "Tipo": "Recebimento",
-                    "SKU": sku,
-                    "Quantidade": quantidade,
-                    "Origem": "Fornecedor",
-                    "Destino": localizacao,
-                    "Observação": observacao
-                }
+                nova_movimentacao = pd.DataFrame(
+                    [{
+                        "Data/Hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        "Tipo": "Recebimento",
+                        "SKU": sku_receb,
+                        "Produto": produto_nome,
+                        "Origem": "Doca / Recebimento",
+                        "Destino": local_destino,
+                        "Quantidade": quantidade,
+                        "Usuário": usuario,
+                        "Observação": observacao
+                    }]
+                )
 
-                st.session_state.estoque.append(entrada)
-                st.session_state.movimentacoes.append(movimento)
+                st.session_state.estoque = pd.concat(
+                    [st.session_state.estoque, novo_estoque],
+                    ignore_index=True
+                )
+
+                st.session_state.movimentacoes = pd.concat(
+                    [st.session_state.movimentacoes, nova_movimentacao],
+                    ignore_index=True
+                )
 
                 st.success("Recebimento registrado com sucesso.")
 
-
-# =========================
+# =========================================================
 # CONSULTA DE ESTOQUE
-# =========================
+# =========================================================
 
 elif menu == "Consulta de Estoque":
-    st.header("Consulta de Estoque")
+    st.header("🔎 Consulta de Estoque")
 
-    if st.session_state.estoque:
-        df_estoque = pd.DataFrame(st.session_state.estoque)
+    if len(st.session_state.estoque) == 0:
+        st.info("Ainda não há saldo em estoque.")
+    else:
+        col1, col2, col3 = st.columns(3)
 
-        filtro_sku = st.text_input("Filtrar por SKU")
-        filtro_local = st.text_input("Filtrar por localização")
+        with col1:
+            filtro_sku = st.text_input("Filtrar por SKU")
 
-        df_filtrado = df_estoque.copy()
+        with col2:
+            filtro_local = st.text_input("Filtrar por Localização")
+
+        with col3:
+            filtro_status = st.selectbox(
+                "Filtrar por Status",
+                ["Todos", "Disponível", "Bloqueado", "Quarentena"]
+            )
+
+        df = st.session_state.estoque.copy()
 
         if filtro_sku:
-            df_filtrado = df_filtrado[df_filtrado["SKU"].str.contains(filtro_sku, case=False, na=False)]
+            df = df[df["SKU"].str.contains(filtro_sku, case=False, na=False)]
 
         if filtro_local:
-            df_filtrado = df_filtrado[df_filtrado["Localização"].str.contains(filtro_local, case=False, na=False)]
+            df = df[df["Localização"].str.contains(filtro_local, case=False, na=False)]
 
-        st.dataframe(df_filtrado, use_container_width=True)
-    else:
-        st.info("Nenhum estoque registrado.")
+        if filtro_status != "Todos":
+            df = df[df["Status Estoque"] == filtro_status]
 
+        st.dataframe(df, use_container_width=True)
 
-# =========================
+# =========================================================
 # MOVIMENTAÇÃO INTERNA
-# =========================
+# =========================================================
 
 elif menu == "Movimentação Interna":
-    st.header("Movimentação Interna")
+    st.header("🔄 Movimentação Interna")
 
-    if not st.session_state.estoque:
-        st.warning("Não há estoque disponível para movimentação.")
+    if len(st.session_state.estoque) == 0:
+        st.warning("Não há estoque disponível para movimentar.")
     else:
-        df_estoque = pd.DataFrame(st.session_state.estoque)
-        st.dataframe(df_estoque, use_container_width=True)
-
         with st.form("form_movimentacao"):
-            indice_item = st.number_input("Número da linha do item a movimentar", min_value=0, step=1)
-            destino = st.text_input("Nova localização de destino")
-            observacao = st.text_area("Observação da movimentação")
+            col1, col2 = st.columns(2)
 
-            salvar = st.form_submit_button("Confirmar movimentação")
+            with col1:
+                sku_mov = st.selectbox(
+                    "SKU",
+                    st.session_state.estoque["SKU"].unique().tolist()
+                )
 
-            if salvar:
-                if indice_item < len(st.session_state.estoque):
-                    origem = st.session_state.estoque[indice_item]["Localização"]
-                    sku = st.session_state.estoque[indice_item]["SKU"]
-                    quantidade = st.session_state.estoque[indice_item]["Quantidade"]
+                produto_mov = st.session_state.estoque.loc[
+                    st.session_state.estoque["SKU"] == sku_mov,
+                    "Produto"
+                ].values[0]
 
-                    st.session_state.estoque[indice_item]["Localização"] = destino
+                origem = st.selectbox(
+                    "Localização de Origem",
+                    st.session_state.estoque.loc[
+                        st.session_state.estoque["SKU"] == sku_mov,
+                        "Localização"
+                    ].unique().tolist()
+                )
 
-                    movimento = {
-                        "Data": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        "Tipo": "Movimentação Interna",
-                        "SKU": sku,
-                        "Quantidade": quantidade,
-                        "Origem": origem,
-                        "Destino": destino,
-                        "Observação": observacao
-                    }
+            with col2:
+                destino = st.selectbox(
+                    "Localização de Destino",
+                    st.session_state.localizacoes["Código"].tolist()
+                )
 
-                    st.session_state.movimentacoes.append(movimento)
+                qtd_mov = st.number_input(
+                    "Quantidade",
+                    min_value=1,
+                    step=1
+                )
+
+                usuario_mov = st.text_input("Usuário / Operador")
+
+            obs_mov = st.text_area("Observação")
+
+            movimentar = st.form_submit_button("Confirmar Movimentação")
+
+            if movimentar:
+                filtro = (
+                    (st.session_state.estoque["SKU"] == sku_mov) &
+                    (st.session_state.estoque["Localização"] == origem)
+                )
+
+                saldo_origem = st.session_state.estoque.loc[filtro, "Quantidade"].sum()
+
+                if qtd_mov > saldo_origem:
+                    st.error("Quantidade maior que o saldo disponível na origem.")
+                else:
+                    idx_origem = st.session_state.estoque.loc[filtro].index[0]
+                    st.session_state.estoque.at[idx_origem, "Quantidade"] -= qtd_mov
+
+                    novo_destino = pd.DataFrame(
+                        [{
+                            "SKU": sku_mov,
+                            "Produto": produto_mov,
+                            "Localização": destino,
+                            "Lote": "",
+                            "Validade": "",
+                            "Quantidade": qtd_mov,
+                            "Status Estoque": "Disponível"
+                        }]
+                    )
+
+                    nova_mov = pd.DataFrame(
+                        [{
+                            "Data/Hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                            "Tipo": "Movimentação Interna",
+                            "SKU": sku_mov,
+                            "Produto": produto_mov,
+                            "Origem": origem,
+                            "Destino": destino,
+                            "Quantidade": qtd_mov,
+                            "Usuário": usuario_mov,
+                            "Observação": obs_mov
+                        }]
+                    )
+
+                    st.session_state.estoque = pd.concat(
+                        [st.session_state.estoque, novo_destino],
+                        ignore_index=True
+                    )
+
+                    st.session_state.movimentacoes = pd.concat(
+                        [st.session_state.movimentacoes, nova_mov],
+                        ignore_index=True
+                    )
 
                     st.success("Movimentação realizada com sucesso.")
-                else:
-                    st.error("Linha informada não encontrada.")
 
-
-# =========================
-# PICKING
-# =========================
-
-elif menu == "Picking":
-    st.header("Picking / Separação")
-
-    st.info("Módulo inicial de picking. Nas próximas etapas vamos incluir pedidos, ondas de separação e validação por código de barras.")
-
-    if st.session_state.estoque:
-        df_estoque = pd.DataFrame(st.session_state.estoque)
-        st.dataframe(df_estoque, use_container_width=True)
-    else:
-        st.warning("Não há estoque disponível para picking.")
-
-
-# =========================
-# EXPEDIÇÃO
-# =========================
-
-elif menu == "Expedição":
-    st.header("Expedição")
-
-    st.info("Módulo inicial de expedição. Nas próximas etapas vamos incluir conferência final, transportadora e baixa de estoque.")
-
-
-# =========================
+# =========================================================
 # INVENTÁRIO
-# =========================
+# =========================================================
 
 elif menu == "Inventário":
-    st.header("Inventário")
+    st.header("🧮 Inventário")
 
-    if st.session_state.estoque:
-        df_estoque = pd.DataFrame(st.session_state.estoque)
-        st.dataframe(df_estoque, use_container_width=True)
-
-        st.info("Nas próximas etapas vamos incluir contagem física, comparação com estoque sistêmico e ajuste aprovado.")
+    if len(st.session_state.estoque) == 0:
+        st.warning("Não há estoque para inventariar.")
     else:
-        st.warning("Nenhum estoque disponível para inventário.")
+        with st.form("form_inventario"):
+            col1, col2 = st.columns(2)
 
+            with col1:
+                sku_inv = st.selectbox(
+                    "SKU",
+                    st.session_state.estoque["SKU"].unique().tolist()
+                )
 
-# =========================
-# RELATÓRIOS
-# =========================
+                produto_inv = st.session_state.estoque.loc[
+                    st.session_state.estoque["SKU"] == sku_inv,
+                    "Produto"
+                ].values[0]
 
-elif menu == "Relatórios":
-    st.header("Relatórios")
+                local_inv = st.selectbox(
+                    "Localização",
+                    st.session_state.estoque.loc[
+                        st.session_state.estoque["SKU"] == sku_inv,
+                        "Localização"
+                    ].unique().tolist()
+                )
 
-    if st.session_state.movimentacoes:
-        df_mov = pd.DataFrame(st.session_state.movimentacoes)
-        st.subheader("Relatório de Movimentações")
-        st.dataframe(df_mov, use_container_width=True)
+            with col2:
+                filtro_inv = (
+                    (st.session_state.estoque["SKU"] == sku_inv) &
+                    (st.session_state.estoque["Localização"] == local_inv)
+                )
+
+                qtd_sistema = int(st.session_state.estoque.loc[filtro_inv, "Quantidade"].sum())
+
+                st.number_input(
+                    "Quantidade no Sistema",
+                    value=qtd_sistema,
+                    disabled=True
+                )
+
+                qtd_fisica = st.number_input(
+                    "Quantidade Física",
+                    min_value=0,
+                    step=1
+                )
+
+                responsavel = st.text_input("Responsável pela Contagem")
+
+            registrar_inv = st.form_submit_button("Registrar Inventário")
+
+            if registrar_inv:
+                diferenca = qtd_fisica - qtd_sistema
+
+                novo_inv = pd.DataFrame(
+                    [{
+                        "Data": datetime.now().strftime("%d/%m/%Y"),
+                        "SKU": sku_inv,
+                        "Produto": produto_inv,
+                        "Localização": local_inv,
+                        "Qtd Sistema": qtd_sistema,
+                        "Qtd Física": qtd_fisica,
+                        "Diferença": diferenca,
+                        "Responsável": responsavel,
+                        "Status": "Pendente de Análise" if diferenca != 0 else "Sem Divergência"
+                    }]
+                )
+
+                st.session_state.inventario = pd.concat(
+                    [st.session_state.inventario, novo_inv],
+                    ignore_index=True
+                )
+
+                st.success("Inventário registrado com sucesso.")
+
+        st.subheader("Histórico de Inventário")
+        st.dataframe(st.session_state.inventario, use_container_width=True)
+
+# =========================================================
+# HISTÓRICO DE MOVIMENTAÇÕES
+# =========================================================
+
+elif menu == "Histórico de Movimentações":
+    st.header("📜 Histórico de Movimentações")
+
+    if len(st.session_state.movimentacoes) == 0:
+        st.info("Ainda não há movimentações registradas.")
     else:
-        st.info("Nenhuma movimentação registrada.")
+        st.dataframe(st.session_state.movimentacoes, use_container_width=True)
