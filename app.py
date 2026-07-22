@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 import barcode
 from barcode.writer import ImageWriter
 
