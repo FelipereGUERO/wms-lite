@@ -142,7 +142,8 @@ modulo = st.sidebar.radio(
         "Ajustes de Estoque",
         "Bloqueio / Desbloqueio",
         "Gestão de Lotes e Validades",
-        "Pedidos / Ordens",        
+        "Rastreabilidade",
+        "Pedidos / Ordens",
         "Picking / Separação",        
         "Expedição / Conferência",
         "Inventário",        
@@ -1012,6 +1013,268 @@ elif modulo == "Gestão de Lotes e Validades":
                     use_container_width=True
                 )
 
+# =========================
+# RASTREABILIDADE
+# =========================
+
+elif modulo == "Rastreabilidade":
+    st.header("Rastreabilidade")
+
+    st.write(
+        "Nesta área você pode consultar o histórico operacional por SKU, lote, pedido, localização, usuário ou tipo de movimentação."
+    )
+
+    st.divider()
+
+    st.subheader("Filtros de Rastreabilidade")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        filtro_sku_rast = st.text_input("SKU")
+        filtro_lote_rast = st.text_input("Lote")
+
+    with col2:
+        filtro_pedido_rast = st.text_input("Pedido / Ordem")
+        filtro_local_rast = st.text_input("Localização")
+
+    with col3:
+        filtro_usuario_rast = st.text_input("Usuário")
+        filtro_tipo_rast = st.text_input("Tipo de Movimentação")
+
+    st.divider()
+
+    aba1, aba2, aba3 = st.tabs([
+        "Estoque Atual",
+        "Movimentações",
+        "Pedidos / Ordens"
+    ])
+
+    # =========================
+    # ABA 1 - ESTOQUE ATUAL
+    # =========================
+
+    with aba1:
+        st.subheader("Rastreabilidade no Estoque Atual")
+
+        if st.session_state.estoque.empty:
+            st.info("Não há estoque cadastrado.")
+        else:
+            df_estoque_rast = st.session_state.estoque.copy()
+
+            if filtro_sku_rast:
+                df_estoque_rast = df_estoque_rast[
+                    df_estoque_rast["SKU"].astype(str).str.contains(
+                        filtro_sku_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_lote_rast:
+                df_estoque_rast = df_estoque_rast[
+                    df_estoque_rast["Lote"].astype(str).str.contains(
+                        filtro_lote_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_local_rast:
+                df_estoque_rast = df_estoque_rast[
+                    df_estoque_rast["Localização"].astype(str).str.contains(
+                        filtro_local_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if df_estoque_rast.empty:
+                st.info("Nenhum registro de estoque encontrado com os filtros informados.")
+            else:
+                st.dataframe(df_estoque_rast, use_container_width=True)
+
+                st.subheader("Resumo por SKU, Lote e Localização")
+
+                resumo_estoque_rast = df_estoque_rast.groupby(
+                    [
+                        "SKU",
+                        "Descrição",
+                        "Lote",
+                        "Validade",
+                        "Localização",
+                        "Status Estoque"
+                    ],
+                    as_index=False
+                )["Quantidade"].sum()
+
+                st.dataframe(resumo_estoque_rast, use_container_width=True)
+
+    # =========================
+    # ABA 2 - MOVIMENTAÇÕES
+    # =========================
+
+    with aba2:
+        st.subheader("Rastreabilidade nas Movimentações")
+
+        if st.session_state.movimentacoes.empty:
+            st.info("Não há movimentações registradas.")
+        else:
+            df_mov_rast = st.session_state.movimentacoes.copy()
+
+            if filtro_sku_rast:
+                df_mov_rast = df_mov_rast[
+                    df_mov_rast["SKU"].astype(str).str.contains(
+                        filtro_sku_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_pedido_rast:
+                df_mov_rast = df_mov_rast[
+                    df_mov_rast["Destino"].astype(str).str.contains(
+                        filtro_pedido_rast,
+                        case=False,
+                        na=False
+                    ) |
+                    df_mov_rast["Origem"].astype(str).str.contains(
+                        filtro_pedido_rast,
+                        case=False,
+                        na=False
+                    ) |
+                    df_mov_rast["Observação"].astype(str).str.contains(
+                        filtro_pedido_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_local_rast:
+                df_mov_rast = df_mov_rast[
+                    df_mov_rast["Origem"].astype(str).str.contains(
+                        filtro_local_rast,
+                        case=False,
+                        na=False
+                    ) |
+                    df_mov_rast["Destino"].astype(str).str.contains(
+                        filtro_local_rast,
+                        case=False,
+                        na=False
+                    ) |
+                    df_mov_rast["Observação"].astype(str).str.contains(
+                        filtro_local_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_usuario_rast:
+                df_mov_rast = df_mov_rast[
+                    df_mov_rast["Usuário"].astype(str).str.contains(
+                        filtro_usuario_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_tipo_rast:
+                df_mov_rast = df_mov_rast[
+                    df_mov_rast["Tipo"].astype(str).str.contains(
+                        filtro_tipo_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_lote_rast:
+                df_mov_rast = df_mov_rast[
+                    df_mov_rast["Observação"].astype(str).str.contains(
+                        filtro_lote_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if df_mov_rast.empty:
+                st.info("Nenhuma movimentação encontrada com os filtros informados.")
+            else:
+                st.dataframe(df_mov_rast, use_container_width=True)
+
+                st.subheader("Resumo de Movimentações por Tipo")
+
+                resumo_mov_tipo = df_mov_rast.groupby(
+                    ["Tipo"],
+                    as_index=False
+                )["Quantidade"].sum()
+
+                st.dataframe(resumo_mov_tipo, use_container_width=True)
+
+                st.subheader("Resumo de Movimentações por Usuário")
+
+                resumo_mov_usuario = df_mov_rast.groupby(
+                    ["Usuário"],
+                    as_index=False
+                )["Quantidade"].sum()
+
+                st.dataframe(resumo_mov_usuario, use_container_width=True)
+
+    # =========================
+    # ABA 3 - PEDIDOS / ORDENS
+    # =========================
+
+    with aba3:
+        st.subheader("Rastreabilidade em Pedidos / Ordens")
+
+        if st.session_state.pedidos.empty:
+            st.info("Não há pedidos ou ordens cadastrados.")
+        else:
+            df_pedidos_rast = st.session_state.pedidos.copy()
+
+            if filtro_sku_rast:
+                df_pedidos_rast = df_pedidos_rast[
+                    df_pedidos_rast["SKU"].astype(str).str.contains(
+                        filtro_sku_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_pedido_rast:
+                df_pedidos_rast = df_pedidos_rast[
+                    df_pedidos_rast["Pedido"].astype(str).str.contains(
+                        filtro_pedido_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if filtro_usuario_rast:
+                df_pedidos_rast = df_pedidos_rast[
+                    df_pedidos_rast["Observação"].astype(str).str.contains(
+                        filtro_usuario_rast,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if df_pedidos_rast.empty:
+                st.info("Nenhum pedido encontrado com os filtros informados.")
+            else:
+                st.dataframe(df_pedidos_rast, use_container_width=True)
+
+                st.subheader("Resumo de Pedidos por Status")
+
+                resumo_pedidos_status = df_pedidos_rast.groupby(
+                    ["Status"],
+                    as_index=False
+                )["Pedido"].count()
+
+                resumo_pedidos_status = resumo_pedidos_status.rename(
+                    columns={"Pedido": "Quantidade"}
+                )
+
+                st.dataframe(resumo_pedidos_status, use_container_width=True)
 
 # =========================
 # PEDIDOS / ORDENS
