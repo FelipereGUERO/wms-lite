@@ -148,6 +148,17 @@ def obter_descricao_produto(sku):
 
     return resultado.iloc[0]["Descrição"]
 
+def valor_ja_cadastrado(df, coluna, valor):
+    if df.empty:
+        return False
+
+    if valor is None:
+        return False
+
+    return df[coluna].astype(str).str.strip().str.upper().eq(
+        str(valor).strip().upper()
+    ).any()
+
 
 # =========================
 # INICIALIZAÇÃO
@@ -492,13 +503,18 @@ elif modulo == "Cadastro de Produtos":
 
         salvar = st.form_submit_button("Salvar Produto")
 
-        if salvar:
-            if sku == "" or descricao == "":
+                if salvar:
+            sku_limpo = sku.strip()
+            descricao_limpa = descricao.strip()
+
+            if sku_limpo == "" or descricao_limpa == "":
                 st.error("Preencha pelo menos SKU e Descrição.")
+            elif valor_ja_cadastrado(st.session_state.produtos, "SKU", sku_limpo):
+                st.error("Este SKU já está cadastrado. Verifique antes de criar um novo produto.")
             else:
                 novo_produto = {
-                    "SKU": sku,
-                    "Descrição": descricao,
+                    "SKU": sku_limpo,
+                    "Descrição": descricao_limpa,
                     "Unidade": unidade,
                     "Categoria": categoria,
                     "Controla Lote": controla_lote,
@@ -549,12 +565,16 @@ elif modulo == "Cadastro de Localizações":
 
         salvar_local = st.form_submit_button("Salvar Localização")
 
-        if salvar_local:
-            if codigo == "":
+                if salvar_local:
+            codigo_limpo = codigo.strip()
+
+            if codigo_limpo == "":
                 st.error("Informe o código da localização.")
+            elif valor_ja_cadastrado(st.session_state.localizacoes, "Código", codigo_limpo):
+                st.error("Esta localização já está cadastrada. Verifique antes de criar uma nova localização.")
             else:
                 nova_localizacao = {
-                    "Código": codigo,
+                    "Código": codigo_limpo,
                     "Tipo": tipo,
                     "Rua": rua,
                     "Coluna": coluna,
@@ -1812,13 +1832,33 @@ elif modulo == "Pedidos / Ordens":
 
             salvar_pedido = st.form_submit_button("Salvar Pedido / Ordem")
 
-            if salvar_pedido:
-                if numero_pedido == "":
+                        if salvar_pedido:
+                numero_pedido_limpo = numero_pedido.strip()
+                cliente_destino_limpo = cliente_destino.strip()
+
+                pedido_sku_duplicado = False
+
+                if not st.session_state.pedidos.empty:
+                    pedido_sku_duplicado = (
+                        (
+                            st.session_state.pedidos["Pedido"].astype(str).str.strip().str.upper()
+                            == numero_pedido_limpo.upper()
+                        )
+                        &
+                        (
+                            st.session_state.pedidos["SKU"].astype(str).str.strip().str.upper()
+                            == str(sku_pedido).strip().upper()
+                        )
+                    ).any()
+
+                if numero_pedido_limpo == "":
                     st.error("Informe o número do pedido ou ordem.")
+                elif pedido_sku_duplicado:
+                    st.error("Este pedido já possui este SKU cadastrado. Verifique antes de duplicar a linha.")
                 else:
                     novo_pedido = {
-                        "Pedido": numero_pedido,
-                        "Cliente / Destino": cliente_destino,
+                        "Pedido": numero_pedido_limpo,
+                        "Cliente / Destino": cliente_destino_limpo,
                         "SKU": sku_pedido,
                         "Descrição": descricao_pedido,
                         "Quantidade": quantidade_pedido,
