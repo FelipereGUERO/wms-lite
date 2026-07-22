@@ -483,6 +483,10 @@ if modulo == "Dashboard":
 # CADASTRO DE PRODUTOS
 # =========================
 
+# =========================
+# CADASTRO DE PRODUTOS
+# =========================
+
 elif modulo == "Cadastro de Produtos":
     st.header("Cadastro de Produtos")
 
@@ -503,9 +507,10 @@ elif modulo == "Cadastro de Produtos":
 
         salvar = st.form_submit_button("Salvar Produto")
 
-            if salvar:
+        if salvar:
             sku_limpo = sku.strip()
             descricao_limpa = descricao.strip()
+
             if sku_limpo == "" or descricao_limpa == "":
                 st.error("Preencha pelo menos SKU e Descrição.")
             elif valor_ja_cadastrado(st.session_state.produtos, "SKU", sku_limpo):
