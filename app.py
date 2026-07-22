@@ -1830,7 +1830,7 @@ elif modulo == "Pedidos / Ordens":
 
             salvar_pedido = st.form_submit_button("Salvar Pedido / Ordem")
 
-                if salvar_pedido:
+            if salvar_pedido:
                 numero_pedido_limpo = numero_pedido.strip()
                 cliente_destino_limpo = cliente_destino.strip()
 
@@ -1904,18 +1904,27 @@ elif modulo == "Pedidos / Ordens":
 
         if filtro_pedido:
             df_pedidos = df_pedidos[
-                df_pedidos["Pedido"].str.contains(filtro_pedido, case=False, na=False)
+                df_pedidos["Pedido"].astype(str).str.contains(
+                    filtro_pedido,
+                    case=False,
+                    na=False
+                )
             ]
 
         if filtro_sku_pedido:
             df_pedidos = df_pedidos[
-                df_pedidos["SKU"].str.contains(filtro_sku_pedido, case=False, na=False)
+                df_pedidos["SKU"].astype(str).str.contains(
+                    filtro_sku_pedido,
+                    case=False,
+                    na=False
+                )
             ]
 
         if filtro_status_pedido != "Todos":
             df_pedidos = df_pedidos[df_pedidos["Status"] == filtro_status_pedido]
 
         st.dataframe(df_pedidos, use_container_width=True)
+
 
 
 # =========================
