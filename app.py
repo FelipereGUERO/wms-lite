@@ -477,12 +477,6 @@ if modulo == "Dashboard":
         for alerta in alertas:
             st.warning(alerta)
 
-
-
-# =========================
-# CADASTRO DE PRODUTOS
-# =========================
-
 # =========================
 # CADASTRO DE PRODUTOS
 # =========================
@@ -569,7 +563,7 @@ elif modulo == "Cadastro de Localizações":
 
         salvar_local = st.form_submit_button("Salvar Localização")
 
-                if salvar_local:
+        if salvar_local:
             codigo_limpo = codigo.strip()
 
             if codigo_limpo == "":
