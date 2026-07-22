@@ -625,69 +625,136 @@ elif modulo == "Pedidos / Ordens":
 elif modulo == "Picking / Separação":
     st.header("Picking / Separação")
 
+    st.write(
+        "Nesta área você pode separar pedidos cadastrados, validar saldo disponível e baixar o estoque."
+    )
+
     if st.session_state.estoque.empty:
         st.warning("Não há estoque disponível para separação.")
+
+    elif st.session_state.pedidos.empty:
+        st.warning("Não existem pedidos cadastrados para separação.")
+        st.info("Cadastre primeiro um pedido no módulo 'Pedidos / Ordens'.")
+
     else:
-        with st.form("form_picking"):
-            pedido = st.text_input("Número do Pedido")
-            sku_pick = st.selectbox("SKU", st.session_state.estoque["SKU"].unique())
-            descricao_pick = obter_descricao_produto(sku_pick)
-            quantidade_pick = st.number_input("Quantidade a Separar", min_value=1, step=1)
+        pedidos_disponiveis = st.session_state.pedidos[
+            st.session_state.pedidos["Status"].isin([
+                "Criado",
+                "Aguardando Picking",
+                "Em Picking"
+            ])
+        ].copy()
 
-            observacao_pick = st.text_area("Observação")
+        if pedidos_disponiveis.empty:
+            st.info("Não existem pedidos pendentes para picking.")
+        else:
+            pedidos_disponiveis["Opção"] = (
+                pedidos_disponiveis["Pedido"].astype(str)
+                + " | SKU: "
+                + pedidos_disponiveis["SKU"].astype(str)
+                + " | Qtd: "
+                + pedidos_disponiveis["Quantidade"].astype(str)
+                + " | Status: "
+                + pedidos_disponiveis["Status"].astype(str)
+            )
 
-            separar = st.form_submit_button("Confirmar Separação")
+            opcao_pedido = st.selectbox(
+                "Selecione o Pedido / Ordem para Separação",
+                pedidos_disponiveis["Opção"].tolist()
+            )
 
-            if separar:
-                saldo_disponivel = st.session_state.estoque[
-                    (st.session_state.estoque["SKU"] == sku_pick) &
-                    (st.session_state.estoque["Status Estoque"] == "Disponível")
-                ]["Quantidade"].sum()
+            indice_pedido = pedidos_disponiveis[
+                pedidos_disponiveis["Opção"] == opcao_pedido
+            ].index[0]
 
-                if quantidade_pick > saldo_disponivel:
-                    st.error("Quantidade solicitada maior que o saldo disponível.")
-                else:
-                    indices = st.session_state.estoque[
-                        (st.session_state.estoque["SKU"] == sku_pick) &
-                        (st.session_state.estoque["Status Estoque"] == "Disponível")
-                    ].index
+            pedido_selecionado = st.session_state.pedidos.loc[indice_pedido]
 
-                    qtd_restante = quantidade_pick
-                    origem_utilizada = ""
+            numero_pedido = pedido_selecionado["Pedido"]
+            cliente_destino = pedido_selecionado["Cliente / Destino"]
+            sku_pick = pedido_selecionado["SKU"]
+            descricao_pick = pedido_selecionado["Descrição"]
+            quantidade_pick = int(pedido_selecionado["Quantidade"])
+            prioridade_pick = pedido_selecionado["Prioridade"]
+            status_atual = pedido_selecionado["Status"]
 
-                    for idx in indices:
-                        qtd_linha = st.session_state.estoque.at[idx, "Quantidade"]
-                        local_linha = st.session_state.estoque.at[idx, "Localização"]
+            st.divider()
 
-                        if origem_utilizada == "":
-                            origem_utilizada = local_linha
+            st.subheader("Dados do Pedido Selecionado")
 
-                        if qtd_restante <= 0:
-                            break
+            col1, col2, col3 = st.columns(3)
 
-                        if qtd_linha <= qtd_restante:
-                            qtd_restante -= qtd_linha
-                            st.session_state.estoque.at[idx, "Quantidade"] = 0
-                        else:
-                            st.session_state.estoque.at[idx, "Quantidade"] = qtd_linha - qtd_restante
-                            qtd_restante = 0
+            with col1:
+                st.text_input("Pedido", value=numero_pedido, disabled=True)
+                st.text_input("Cliente / Destino", value=cliente_destino, disabled=True)
 
-                    st.session_state.estoque = st.session_state.estoque[
-                        st.session_state.estoque["Quantidade"] > 0
-                    ]
+            with col2:
+                st.text_input("SKU", value=sku_pick, disabled=True)
+                st.text_input("Descrição", value=descricao_pick, disabled=True)
 
-                    registrar_movimentacao(
-                        tipo="Picking",
-                        sku=sku_pick,
-                        descricao=descricao_pick,
-                        origem=origem_utilizada,
-                        destino=f"Pedido {pedido}",
-                        quantidade=quantidade_pick,
-                        usuario=usuario_logado,
-                        observacao=observacao_pick
-                    )
+            with col3:
+                st.text_input("Quantidade a Separar", value=str(quantidade_pick), disabled=True)
+                st.text_input("Prioridade", value=prioridade_pick, disabled=True)
 
-                    st.success("Separação registrada com sucesso.")
+            saldo_disponivel = st.session_state.estoque[
+                (st.session_state.estoque["SKU"] == sku_pick) &
+                (st.session_state.estoque["Status Estoque"] == "Disponível")
+            ]["Quantidade"].sum()
+
+            st.info(f"Saldo disponível para o SKU {sku_pick}: {saldo_disponivel}")
+
+            if saldo_disponivel < quantidade_pick:
+                st.error("Saldo insuficiente para atender este pedido.")
+            else:
+                with st.form("form_picking_integrado"):
+                    observacao_pick = st.text_area("Observação da Separação")
+
+                    confirmar_picking = st.form_submit_button("Confirmar Separação do Pedido")
+
+                    if confirmar_picking:
+                        indices = st.session_state.estoque[
+                            (st.session_state.estoque["SKU"] == sku_pick) &
+                            (st.session_state.estoque["Status Estoque"] == "Disponível")
+                        ].index
+
+                        qtd_restante = quantidade_pick
+                        origem_utilizada = ""
+
+                        for idx in indices:
+                            qtd_linha = st.session_state.estoque.at[idx, "Quantidade"]
+                            local_linha = st.session_state.estoque.at[idx, "Localização"]
+
+                            if origem_utilizada == "":
+                                origem_utilizada = local_linha
+
+                            if qtd_restante <= 0:
+                                break
+
+                            if qtd_linha <= qtd_restante:
+                                qtd_restante -= qtd_linha
+                                st.session_state.estoque.at[idx, "Quantidade"] = 0
+                            else:
+                                st.session_state.estoque.at[idx, "Quantidade"] = qtd_linha - qtd_restante
+                                qtd_restante = 0
+
+                        st.session_state.estoque = st.session_state.estoque[
+                            st.session_state.estoque["Quantidade"] > 0
+                        ]
+
+                        st.session_state.pedidos.at[indice_pedido, "Status"] = "Separado"
+
+                        registrar_movimentacao(
+                            tipo="Picking",
+                            sku=sku_pick,
+                            descricao=descricao_pick,
+                            origem=origem_utilizada,
+                            destino=f"Pedido {numero_pedido}",
+                            quantidade=quantidade_pick,
+                            usuario=usuario_logado,
+                            observacao=observacao_pick
+                        )
+
+                        st.success("Pedido separado com sucesso.")
+                        st.info("O status do pedido foi atualizado para 'Separado'.")
 
 
 # =========================
