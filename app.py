@@ -164,53 +164,109 @@ def valor_ja_cadastrado(df, coluna, valor):
         str(valor).strip().upper()
     ).any()
 
-def gerar_codigo_barras_png(valor):
-    valor = str(valor).strip()
+def gerar_codigo_barras_imagem(valor_codigo):
+    valor_codigo = str(valor_codigo).strip()
 
-    if valor == "":
-        return None, None
+    if valor_codigo == "":
+        valor_codigo = "SEM-CODIGO"
 
-    code128 = barcode.get_barcode_class("code128")
-    codigo = code128(valor, writer=ImageWriter())
+    Code128 = barcode.get_barcode_class("code128")
+    codigo = Code128(valor_codigo, writer=ImageWriter())
 
-    imagem = codigo.render(
-        writer_options={
+    buffer = BytesIO()
+
+    codigo.write(
+        buffer,
+        options={
+            "write_text": False,
             "module_width": 0.35,
-            "module_height": 18.0,
-            "font_size": 10,
-            "text_distance": 5,
-            "quiet_zone": 6
+            "module_height": 18,
+            "quiet_zone": 2,
+            "font_size": 0,
+            "text_distance": 1
         }
     )
 
+    buffer.seek(0)
+
+    imagem = Image.open(buffer).convert("RGB")
+
+    return imagem
+
+
+def imagem_para_bytes(imagem):
     buffer = BytesIO()
     imagem.save(buffer, format="PNG")
-    png_bytes = buffer.getvalue()
+    buffer.seek(0)
+    return buffer.getvalue()
 
-    return imagem, png_bytes
 
+def gerar_etiqueta_completa(titulo, linhas, valor_codigo):
+    largura = 1000
+    altura = 620
 
-def exibir_etiqueta(codigo_barras, linhas_etiqueta, nome_arquivo):
-    st.subheader("Pré-visualização da Etiqueta")
+    etiqueta = Image.new("RGB", (largura, altura), "white")
+    draw = ImageDraw.Draw(etiqueta)
 
-    for linha in linhas_etiqueta:
-        st.write(linha)
+    try:
+        fonte_titulo = ImageFont.truetype("DejaVuSans-Bold.ttf", 34)
+        fonte_texto = ImageFont.truetype("DejaVuSans.ttf", 24)
+        fonte_texto_bold = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
+        fonte_codigo = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
+    except:
+        fonte_titulo = ImageFont.load_default()
+        fonte_texto = ImageFont.load_default()
+        fonte_texto_bold = ImageFont.load_default()
+        fonte_codigo = ImageFont.load_default()
 
-    st.code(codigo_barras)
+    # Borda da etiqueta
+    draw.rectangle(
+        [(10, 10), (largura - 10, altura - 10)],
+        outline="black",
+        width=3
+    )
 
-    imagem, png_bytes = gerar_codigo_barras_png(codigo_barras)
+    # Título
+    y = 25
+    draw.text((35, y), titulo, fill="black", font=fonte_titulo)
 
-    if imagem is not None:
-        st.image(imagem, caption="Código de Barras", use_container_width=False)
+    y += 55
+    draw.line((35, y, largura - 35, y), fill="black", width=2)
 
-        st.download_button(
-            label="Baixar Código de Barras em PNG",
-            data=png_bytes,
-            file_name=nome_arquivo,
-            mime="image/png"
-        )
-    else:
-        st.error("Não foi possível gerar o código de barras.")
+    # Linhas de informação
+    y += 25
+
+    for rotulo, valor in linhas:
+        texto = f"{rotulo}: {valor}"
+        draw.text((35, y), texto, fill="black", font=fonte_texto)
+        y += 38
+
+    # Código de barras
+    imagem_codigo = gerar_codigo_barras_imagem(valor_codigo)
+    imagem_codigo.thumbnail((largura - 120, 210))
+
+    pos_x_codigo = int((largura - imagem_codigo.width) / 2)
+    pos_y_codigo = altura - imagem_codigo.height - 90
+
+    etiqueta.paste(imagem_codigo, (pos_x_codigo, pos_y_codigo))
+
+    # Texto abaixo do código
+    texto_codigo = str(valor_codigo)
+
+    bbox = draw.textbbox((0, 0), texto_codigo, font=fonte_codigo)
+    texto_largura = bbox[2] - bbox[0]
+
+    draw.text(
+        (
+            int((largura - texto_largura) / 2),
+            altura - 55
+        ),
+        texto_codigo,
+        fill="black",
+        font=fonte_codigo
+    )
+
+    return etiqueta
 
 
 
