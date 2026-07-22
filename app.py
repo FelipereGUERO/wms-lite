@@ -76,7 +76,25 @@ def inicializar_dados():
             "Data Criação",
             "Observação"
         ])
-
+        
+    if "devolucoes" not in st.session_state:
+        st.session_state.devolucoes = pd.DataFrame(columns=[
+            "Data/Hora",
+            "Tipo Devolução",
+            "Documento / Referência",
+            "Origem",
+            "Destino",
+            "SKU",
+            "Descrição",
+            "Lote",
+            "Validade",
+            "Quantidade",
+            "Tratativa",
+            "Status Estoque",
+            "Usuário",
+            "Motivo",
+            "Observação"
+        ])
 
 def registrar_movimentacao(tipo, sku, descricao, origem, destino, quantidade, usuario, observacao):
     nova_mov = {
@@ -144,8 +162,9 @@ modulo = st.sidebar.radio(
         "Gestão de Lotes e Validades",
         "Rastreabilidade",
         "Pedidos / Ordens",
-        "Picking / Separação",        
+        "Picking / Separação",
         "Expedição / Conferência",
+        "Devoluções",
         "Inventário",        
         "Histórico de Movimentações",
         "Relatórios / Exportar Dados"
@@ -1948,6 +1967,298 @@ elif modulo == "Expedição / Conferência":
                     else:
                         st.warning("Nenhuma ação executada.")
 
+# =========================
+# DEVOLUÇÕES
+# =========================
+
+elif modulo == "Devoluções":
+    st.header("Devoluções")
+
+    st.write(
+        "Nesta área você pode registrar devoluções de cliente, retornos internos e devoluções para fornecedor."
+    )
+
+    tipo_devolucao = st.selectbox(
+        "Tipo de Devolução",
+        [
+            "Devolução de Cliente / Retorno",
+            "Devolução para Fornecedor"
+        ]
+    )
+
+    st.divider()
+
+    # =========================
+    # DEVOLUÇÃO DE CLIENTE / RETORNO
+    # =========================
+
+    if tipo_devolucao == "Devolução de Cliente / Retorno":
+        st.subheader("Registrar Devolução de Cliente / Retorno")
+
+        if st.session_state.produtos.empty:
+            st.warning("Cadastre produtos antes de registrar devoluções.")
+        else:
+            with st.form("form_devolucao_cliente"):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    documento_ref = st.text_input("Documento / Pedido / Referência")
+                    origem_dev = st.text_input("Origem da Devolução", value="Cliente")
+                    sku_dev = st.selectbox("SKU", st.session_state.produtos["SKU"].tolist())
+                    descricao_dev = obter_descricao_produto(sku_dev)
+                    st.text_input("Descrição", value=descricao_dev, disabled=True)
+
+                    lote_dev = st.text_input("Lote")
+                    validade_dev = st.date_input("Validade", value=date.today())
+
+                with col2:
+                    quantidade_dev = st.number_input("Quantidade Devolvida", min_value=1, step=1)
+
+                    if st.session_state.localizacoes.empty:
+                        destino_dev = st.text_input("Localização de Destino", value="QUARENTENA")
+                    else:
+                        destino_dev = st.selectbox(
+                            "Localização de Destino",
+                            st.session_state.localizacoes["Código"].tolist()
+                        )
+
+                    tratativa_dev = st.selectbox(
+                        "Tratativa",
+                        [
+                            "Retornar ao Estoque Disponível",
+                            "Enviar para Quarentena",
+                            "Bloquear Estoque",
+                            "Descarte / Sucata"
+                        ]
+                    )
+
+                    motivo_dev = st.selectbox(
+                        "Motivo da Devolução",
+                        [
+                            "Produto errado",
+                            "Avaria",
+                            "Excesso",
+                            "Cancelamento",
+                            "Não conformidade",
+                            "Retorno de cliente",
+                            "Erro operacional",
+                            "Outro"
+                        ]
+                    )
+
+                observacao_dev = st.text_area("Observação")
+
+                confirmar_dev_cliente = st.form_submit_button("Registrar Devolução")
+
+                if confirmar_dev_cliente:
+                    if tratativa_dev == "Retornar ao Estoque Disponível":
+                        status_estoque_dev = "Disponível"
+                    elif tratativa_dev == "Enviar para Quarentena":
+                        status_estoque_dev = "Quarentena"
+                    elif tratativa_dev == "Bloquear Estoque":
+                        status_estoque_dev = "Bloqueado"
+                    else:
+                        status_estoque_dev = "Fora do Estoque"
+
+                    if tratativa_dev != "Descarte / Sucata":
+                        novo_estoque_dev = {
+                            "SKU": sku_dev,
+                            "Descrição": descricao_dev,
+                            "Localização": destino_dev,
+                            "Lote": lote_dev,
+                            "Validade": validade_dev.strftime("%d/%m/%Y"),
+                            "Quantidade": quantidade_dev,
+                            "Status Estoque": status_estoque_dev
+                        }
+
+                        st.session_state.estoque = pd.concat(
+                            [st.session_state.estoque, pd.DataFrame([novo_estoque_dev])],
+                            ignore_index=True
+                        )
+
+                    nova_devolucao = {
+                        "Data/Hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        "Tipo Devolução": tipo_devolucao,
+                        "Documento / Referência": documento_ref,
+                        "Origem": origem_dev,
+                        "Destino": destino_dev,
+                        "SKU": sku_dev,
+                        "Descrição": descricao_dev,
+                        "Lote": lote_dev,
+                        "Validade": validade_dev.strftime("%d/%m/%Y"),
+                        "Quantidade": quantidade_dev,
+                        "Tratativa": tratativa_dev,
+                        "Status Estoque": status_estoque_dev,
+                        "Usuário": usuario_logado,
+                        "Motivo": motivo_dev,
+                        "Observação": observacao_dev
+                    }
+
+                    st.session_state.devolucoes = pd.concat(
+                        [st.session_state.devolucoes, pd.DataFrame([nova_devolucao])],
+                        ignore_index=True
+                    )
+
+                    registrar_movimentacao(
+                        tipo="Devolução de Cliente",
+                        sku=sku_dev,
+                        descricao=descricao_dev,
+                        origem=origem_dev,
+                        destino=destino_dev if tratativa_dev != "Descarte / Sucata" else "Descarte / Sucata",
+                        quantidade=quantidade_dev,
+                        usuario=usuario_logado,
+                        observacao=(
+                            f"Documento: {documento_ref}. "
+                            f"Tratativa: {tratativa_dev}. "
+                            f"Motivo: {motivo_dev}. "
+                            f"Lote: {lote_dev}. "
+                            f"Obs: {observacao_dev}"
+                        )
+                    )
+
+                    st.success("Devolução de cliente / retorno registrada com sucesso.")
+
+    # =========================
+    # DEVOLUÇÃO PARA FORNECEDOR
+    # =========================
+
+    elif tipo_devolucao == "Devolução para Fornecedor":
+        st.subheader("Registrar Devolução para Fornecedor")
+
+        if st.session_state.estoque.empty:
+            st.warning("Não há estoque disponível para devolução ao fornecedor.")
+        else:
+            estoque_dev_forn = st.session_state.estoque.copy()
+
+            estoque_dev_forn["Opção"] = (
+                estoque_dev_forn["SKU"].astype(str)
+                + " | "
+                + estoque_dev_forn["Descrição"].astype(str)
+                + " | Local: "
+                + estoque_dev_forn["Localização"].astype(str)
+                + " | Lote: "
+                + estoque_dev_forn["Lote"].astype(str)
+                + " | Qtd: "
+                + estoque_dev_forn["Quantidade"].astype(str)
+                + " | Status: "
+                + estoque_dev_forn["Status Estoque"].astype(str)
+            )
+
+            with st.form("form_devolucao_fornecedor"):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    documento_ref_forn = st.text_input("Documento / NF / Referência")
+                    fornecedor_dev = st.text_input("Fornecedor")
+                    opcao_item_forn = st.selectbox(
+                        "Item para Devolver",
+                        estoque_dev_forn["Opção"].tolist()
+                    )
+
+                indice_item_forn = estoque_dev_forn[
+                    estoque_dev_forn["Opção"] == opcao_item_forn
+                ].index[0]
+
+                item_forn = st.session_state.estoque.loc[indice_item_forn]
+
+                sku_forn = item_forn["SKU"]
+                descricao_forn = item_forn["Descrição"]
+                local_forn = item_forn["Localização"]
+                lote_forn = item_forn["Lote"]
+                validade_forn = item_forn["Validade"]
+                quantidade_disponivel_forn = int(item_forn["Quantidade"])
+                status_forn = item_forn["Status Estoque"]
+
+                with col2:
+                    st.text_input("SKU", value=sku_forn, disabled=True)
+                    st.text_input("Localização", value=local_forn, disabled=True)
+                    st.text_input("Lote", value=lote_forn, disabled=True)
+                    st.text_input("Saldo da Linha", value=str(quantidade_disponivel_forn), disabled=True)
+
+                    quantidade_forn = st.number_input(
+                        "Quantidade a Devolver",
+                        min_value=1,
+                        step=1
+                    )
+
+                    motivo_forn = st.selectbox(
+                        "Motivo da Devolução",
+                        [
+                            "Produto errado",
+                            "Avaria",
+                            "Não conformidade",
+                            "Divergência de recebimento",
+                            "Vencimento / Validade",
+                            "Erro operacional",
+                            "Outro"
+                        ]
+                    )
+
+                observacao_forn = st.text_area("Observação")
+
+                confirmar_dev_forn = st.form_submit_button("Registrar Devolução para Fornecedor")
+
+                if confirmar_dev_forn:
+                    if quantidade_forn > quantidade_disponivel_forn:
+                        st.error("Quantidade a devolver maior que o saldo disponível da linha selecionada.")
+                    else:
+                        nova_qtd = quantidade_disponivel_forn - quantidade_forn
+                        st.session_state.estoque.at[indice_item_forn, "Quantidade"] = nova_qtd
+
+                        st.session_state.estoque = st.session_state.estoque[
+                            st.session_state.estoque["Quantidade"] > 0
+                        ]
+
+                        nova_devolucao_forn = {
+                            "Data/Hora": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                            "Tipo Devolução": tipo_devolucao,
+                            "Documento / Referência": documento_ref_forn,
+                            "Origem": local_forn,
+                            "Destino": fornecedor_dev,
+                            "SKU": sku_forn,
+                            "Descrição": descricao_forn,
+                            "Lote": lote_forn,
+                            "Validade": validade_forn,
+                            "Quantidade": quantidade_forn,
+                            "Tratativa": "Saída para fornecedor",
+                            "Status Estoque": status_forn,
+                            "Usuário": usuario_logado,
+                            "Motivo": motivo_forn,
+                            "Observação": observacao_forn
+                        }
+
+                        st.session_state.devolucoes = pd.concat(
+                            [st.session_state.devolucoes, pd.DataFrame([nova_devolucao_forn])],
+                            ignore_index=True
+                        )
+
+                        registrar_movimentacao(
+                            tipo="Devolução para Fornecedor",
+                            sku=sku_forn,
+                            descricao=descricao_forn,
+                            origem=local_forn,
+                            destino=fornecedor_dev,
+                            quantidade=quantidade_forn,
+                            usuario=usuario_logado,
+                            observacao=(
+                                f"Documento: {documento_ref_forn}. "
+                                f"Motivo: {motivo_forn}. "
+                                f"Lote: {lote_forn}. "
+                                f"Status estoque: {status_forn}. "
+                                f"Obs: {observacao_forn}"
+                            )
+                        )
+
+                        st.success("Devolução para fornecedor registrada com sucesso.")
+
+    st.divider()
+
+    st.subheader("Histórico de Devoluções")
+
+    if st.session_state.devolucoes.empty:
+        st.info("Ainda não existem devoluções registradas.")
+    else:
+        st.dataframe(st.session_state.devolucoes, use_container_width=True)
 
 # =========================
 # INVENTÁRIO
