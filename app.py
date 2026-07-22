@@ -1830,7 +1830,7 @@ elif modulo == "Pedidos / Ordens":
 
             salvar_pedido = st.form_submit_button("Salvar Pedido / Ordem")
 
-                        if salvar_pedido:
+                if salvar_pedido:
                 numero_pedido_limpo = numero_pedido.strip()
                 cliente_destino_limpo = cliente_destino.strip()
 
