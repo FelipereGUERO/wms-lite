@@ -139,7 +139,8 @@ modulo = st.sidebar.radio(
         "Recebimento",
         "Consulta de Estoque",
         "Movimentação Interna",
-        "Pedidos / Ordens",
+        "Ajustes de Estoque",
+        "Pedidos / Ordens",        
         "Picking / Separação",
         "Expedição / Conferência",
         "Inventário",        
@@ -510,6 +511,181 @@ elif modulo == "Movimentação Interna":
 
                     st.success("Movimentação realizada com sucesso.")
 
+# =========================
+# AJUSTES DE ESTOQUE
+# =========================
+
+elif modulo == "Ajustes de Estoque":
+    st.header("Ajustes de Estoque")
+
+    st.write(
+        "Nesta área você pode realizar ajustes controlados de estoque, com motivo obrigatório e registro no histórico."
+    )
+
+    if st.session_state.estoque.empty:
+        st.warning("Não há estoque disponível para ajuste.")
+    else:
+        df_ajuste = st.session_state.estoque.copy()
+
+        df_ajuste["Opção"] = (
+            df_ajuste.index.astype(str)
+            + " | SKU: "
+            + df_ajuste["SKU"].astype(str)
+            + " | Local: "
+            + df_ajuste["Localização"].astype(str)
+            + " | Lote: "
+            + df_ajuste["Lote"].astype(str)
+            + " | Qtd: "
+            + df_ajuste["Quantidade"].astype(str)
+            + " | Status: "
+            + df_ajuste["Status Estoque"].astype(str)
+        )
+
+        opcao_ajuste = st.selectbox(
+            "Selecione o item de estoque para ajuste",
+            df_ajuste["Opção"].tolist()
+        )
+
+        indice_estoque = int(opcao_ajuste.split(" | ")[0])
+
+        item_estoque = st.session_state.estoque.loc[indice_estoque]
+
+        sku_ajuste = item_estoque["SKU"]
+        descricao_ajuste = item_estoque["Descrição"]
+        local_ajuste = item_estoque["Localização"]
+        lote_ajuste = item_estoque["Lote"]
+        validade_ajuste = item_estoque["Validade"]
+        quantidade_atual = int(item_estoque["Quantidade"])
+        status_atual_estoque = item_estoque["Status Estoque"]
+
+        st.divider()
+
+        st.subheader("Dados do Item Selecionado")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.text_input("SKU", value=sku_ajuste, disabled=True)
+            st.text_input("Descrição", value=descricao_ajuste, disabled=True)
+
+        with col2:
+            st.text_input("Localização", value=local_ajuste, disabled=True)
+            st.text_input("Lote", value=lote_ajuste, disabled=True)
+
+        with col3:
+            st.text_input("Validade", value=validade_ajuste, disabled=True)
+            st.text_input("Quantidade Atual", value=str(quantidade_atual), disabled=True)
+
+        st.divider()
+
+        st.subheader("Registrar Ajuste")
+
+        with st.form("form_ajuste_estoque"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                tipo_ajuste = st.selectbox(
+                    "Tipo de Ajuste",
+                    [
+                        "Entrada por Ajuste",
+                        "Saída por Ajuste",
+                        "Perda",
+                        "Avaria",
+                        "Erro Operacional",
+                        "Amostra",
+                        "Scrap",
+                        "Reclassificação",
+                        "Correção Autorizada"
+                    ]
+                )
+
+                operacao_ajuste = st.selectbox(
+                    "Operação",
+                    [
+                        "Somar quantidade ao saldo atual",
+                        "Subtrair quantidade do saldo atual",
+                        "Definir novo saldo final"
+                    ]
+                )
+
+                quantidade_ajuste = st.number_input(
+                    "Quantidade do Ajuste",
+                    min_value=0,
+                    step=1
+                )
+
+            with col2:
+                novo_status_estoque = st.selectbox(
+                    "Status do Estoque após Ajuste",
+                    [
+                        status_atual_estoque,
+                        "Disponível",
+                        "Quarentena",
+                        "Bloqueado"
+                    ]
+                )
+
+                aprovado_por = st.text_input("Aprovado por")
+
+                motivo_ajuste = st.text_area("Motivo do Ajuste")
+
+            confirmar_ajuste = st.form_submit_button("Confirmar Ajuste de Estoque")
+
+            if confirmar_ajuste:
+                if quantidade_ajuste <= 0 and operacao_ajuste != "Definir novo saldo final":
+                    st.error("Informe uma quantidade maior que zero para o ajuste.")
+
+                elif motivo_ajuste.strip() == "":
+                    st.error("O motivo do ajuste é obrigatório.")
+
+                elif aprovado_por.strip() == "":
+                    st.error("Informe quem aprovou o ajuste.")
+
+                else:
+                    if operacao_ajuste == "Somar quantidade ao saldo atual":
+                        nova_quantidade = quantidade_atual + quantidade_ajuste
+                        diferenca = quantidade_ajuste
+
+                    elif operacao_ajuste == "Subtrair quantidade do saldo atual":
+                        if quantidade_ajuste > quantidade_atual:
+                            st.error("A quantidade a subtrair não pode ser maior que o saldo atual.")
+                            st.stop()
+
+                        nova_quantidade = quantidade_atual - quantidade_ajuste
+                        diferenca = quantidade_ajuste * -1
+
+                    else:
+                        nova_quantidade = quantidade_ajuste
+                        diferenca = nova_quantidade - quantidade_atual
+
+                    if nova_quantidade <= 0:
+                        st.session_state.estoque = st.session_state.estoque.drop(index=indice_estoque)
+                        st.session_state.estoque = st.session_state.estoque.reset_index(drop=True)
+                    else:
+                        st.session_state.estoque.at[indice_estoque, "Quantidade"] = nova_quantidade
+                        st.session_state.estoque.at[indice_estoque, "Status Estoque"] = novo_status_estoque
+
+                    registrar_movimentacao(
+                        tipo=f"Ajuste de Estoque - {tipo_ajuste}",
+                        sku=sku_ajuste,
+                        descricao=descricao_ajuste,
+                        origem=local_ajuste,
+                        destino=local_ajuste,
+                        quantidade=diferenca,
+                        usuario=usuario_logado,
+                        observacao=(
+                            f"Operação: {operacao_ajuste}. "
+                            f"Saldo anterior: {quantidade_atual}. "
+                            f"Novo saldo: {nova_quantidade}. "
+                            f"Status anterior: {status_atual_estoque}. "
+                            f"Novo status: {novo_status_estoque}. "
+                            f"Aprovado por: {aprovado_por}. "
+                            f"Motivo: {motivo_ajuste}"
+                        )
+                    )
+
+                    st.success("Ajuste de estoque registrado com sucesso.")
+                    st.info(f"Saldo anterior: {quantidade_atual} | Novo saldo: {nova_quantidade}")
 
 # =========================
 # PEDIDOS / ORDENS
