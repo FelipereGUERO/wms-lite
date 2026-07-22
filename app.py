@@ -141,7 +141,8 @@ modulo = st.sidebar.radio(
         "Movimentação Interna",
         "Pedidos / Ordens",
         "Picking / Separação",
-        "Inventário",
+        "Expedição / Conferência",
+        "Inventário",        
         "Histórico de Movimentações",
         "Exportar Dados"
     ]
@@ -755,6 +756,211 @@ elif modulo == "Picking / Separação":
 
                         st.success("Pedido separado com sucesso.")
                         st.info("O status do pedido foi atualizado para 'Separado'.")
+
+# =========================
+# EXPEDIÇÃO / CONFERÊNCIA
+# =========================
+
+elif modulo == "Expedição / Conferência":
+    st.header("Expedição / Conferência")
+
+    st.write(
+        "Nesta área você pode conferir pedidos separados e finalizar a expedição."
+    )
+
+    if st.session_state.pedidos.empty:
+        st.warning("Não existem pedidos cadastrados.")
+    else:
+        pedidos_para_expedicao = st.session_state.pedidos[
+            st.session_state.pedidos["Status"].isin([
+                "Separado",
+                "Conferido"
+            ])
+        ].copy()
+
+        if pedidos_para_expedicao.empty:
+            st.info("Não existem pedidos separados ou conferidos aguardando expedição.")
+        else:
+            pedidos_para_expedicao["Opção"] = (
+                pedidos_para_expedicao["Pedido"].astype(str)
+                + " | SKU: "
+                + pedidos_para_expedicao["SKU"].astype(str)
+                + " | Qtd: "
+                + pedidos_para_expedicao["Quantidade"].astype(str)
+                + " | Status: "
+                + pedidos_para_expedicao["Status"].astype(str)
+            )
+
+            opcao_expedicao = st.selectbox(
+                "Selecione o Pedido para Conferência / Expedição",
+                pedidos_para_expedicao["Opção"].tolist()
+            )
+
+            indice_pedido_exp = pedidos_para_expedicao[
+                pedidos_para_expedicao["Opção"] == opcao_expedicao
+            ].index[0]
+
+            pedido_exp = st.session_state.pedidos.loc[indice_pedido_exp]
+
+            numero_pedido_exp = pedido_exp["Pedido"]
+            cliente_destino_exp = pedido_exp["Cliente / Destino"]
+            sku_exp = pedido_exp["SKU"]
+            descricao_exp = pedido_exp["Descrição"]
+            quantidade_exp = int(pedido_exp["Quantidade"])
+            prioridade_exp = pedido_exp["Prioridade"]
+            status_exp = pedido_exp["Status"]
+
+            st.divider()
+
+            st.subheader("Dados do Pedido")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.text_input("Pedido", value=numero_pedido_exp, disabled=True)
+                st.text_input("Cliente / Destino", value=cliente_destino_exp, disabled=True)
+
+            with col2:
+                st.text_input("SKU", value=sku_exp, disabled=True)
+                st.text_input("Descrição", value=descricao_exp, disabled=True)
+
+            with col3:
+                st.text_input("Quantidade", value=str(quantidade_exp), disabled=True)
+                st.text_input("Status Atual", value=status_exp, disabled=True)
+
+            st.divider()
+
+            st.subheader("Conferência e Dados de Expedição")
+
+            with st.form("form_expedicao"):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    resultado_conferencia = st.selectbox(
+                        "Resultado da Conferência",
+                        [
+                            "Conforme",
+                            "Divergente"
+                        ]
+                    )
+
+                    transportadora = st.text_input("Transportadora")
+                    documento_transporte = st.text_input("Documento / Nota / Referência")
+
+                with col2:
+                    quantidade_conferida = st.number_input(
+                        "Quantidade Conferida",
+                        min_value=0,
+                        step=1,
+                        value=quantidade_exp
+                    )
+
+                    volumes = st.number_input(
+                        "Volumes",
+                        min_value=0,
+                        step=1,
+                        value=1
+                    )
+
+                    peso_total = st.number_input(
+                        "Peso Total",
+                        min_value=0.0,
+                        step=0.1,
+                        value=0.0
+                    )
+
+                observacao_exp = st.text_area("Observação da Conferência / Expedição")
+
+                if status_exp == "Separado":
+                    acao = st.selectbox(
+                        "Ação",
+                        [
+                            "Conferir e Expedir",
+                            "Somente Conferir",
+                            "Registrar Divergência"
+                        ]
+                    )
+                else:
+                    acao = st.selectbox(
+                        "Ação",
+                        [
+                            "Expedir Pedido",
+                            "Registrar Divergência"
+                        ]
+                    )
+
+                confirmar_expedicao = st.form_submit_button("Confirmar Ação")
+
+                if confirmar_expedicao:
+                    if resultado_conferencia == "Divergente" or quantidade_conferida != quantidade_exp:
+                        st.session_state.pedidos.at[indice_pedido_exp, "Status"] = "Em Picking"
+
+                        registrar_movimentacao(
+                            tipo="Divergência na Expedição",
+                            sku=sku_exp,
+                            descricao=descricao_exp,
+                            origem=f"Pedido {numero_pedido_exp}",
+                            destino="Retorno para análise / picking",
+                            quantidade=quantidade_conferida,
+                            usuario=usuario_logado,
+                            observacao=(
+                                f"Divergência registrada. "
+                                f"Qtd pedido: {quantidade_exp}. "
+                                f"Qtd conferida: {quantidade_conferida}. "
+                                f"Obs: {observacao_exp}"
+                            )
+                        )
+
+                        st.error("Divergência registrada. O pedido voltou para status 'Em Picking'.")
+
+                    elif acao == "Somente Conferir":
+                        st.session_state.pedidos.at[indice_pedido_exp, "Status"] = "Conferido"
+
+                        registrar_movimentacao(
+                            tipo="Conferência",
+                            sku=sku_exp,
+                            descricao=descricao_exp,
+                            origem=f"Pedido {numero_pedido_exp}",
+                            destino="Área de Expedição",
+                            quantidade=quantidade_exp,
+                            usuario=usuario_logado,
+                            observacao=(
+                                f"Pedido conferido. "
+                                f"Transportadora: {transportadora}. "
+                                f"Documento: {documento_transporte}. "
+                                f"Volumes: {volumes}. "
+                                f"Peso: {peso_total}. "
+                                f"Obs: {observacao_exp}"
+                            )
+                        )
+
+                        st.success("Pedido conferido com sucesso. Status atualizado para 'Conferido'.")
+
+                    elif acao in ["Conferir e Expedir", "Expedir Pedido"]:
+                        st.session_state.pedidos.at[indice_pedido_exp, "Status"] = "Expedido"
+
+                        registrar_movimentacao(
+                            tipo="Expedição",
+                            sku=sku_exp,
+                            descricao=descricao_exp,
+                            origem=f"Pedido {numero_pedido_exp}",
+                            destino=cliente_destino_exp,
+                            quantidade=quantidade_exp,
+                            usuario=usuario_logado,
+                            observacao=(
+                                f"Pedido expedido. "
+                                f"Transportadora: {transportadora}. "
+                                f"Documento: {documento_transporte}. "
+                                f"Volumes: {volumes}. "
+                                f"Peso: {peso_total}. "
+                                f"Obs: {observacao_exp}"
+                            )
+                        )
+
+                        st.success("Pedido expedido com sucesso. Status atualizado para 'Expedido'.")
+
+                    else:
+                        st.warning("Nenhuma ação executada.")
 
 
 # =========================
