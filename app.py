@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+from io import BytesIO
+import barcode
+from barcode.writer import ImageWriter
+
 
 # =========================
 # CONFIGURAÇÃO DA PÁGINA
@@ -159,6 +163,55 @@ def valor_ja_cadastrado(df, coluna, valor):
         str(valor).strip().upper()
     ).any()
 
+def gerar_codigo_barras_png(valor):
+    valor = str(valor).strip()
+
+    if valor == "":
+        return None, None
+
+    code128 = barcode.get_barcode_class("code128")
+    codigo = code128(valor, writer=ImageWriter())
+
+    imagem = codigo.render(
+        writer_options={
+            "module_width": 0.35,
+            "module_height": 18.0,
+            "font_size": 10,
+            "text_distance": 5,
+            "quiet_zone": 6
+        }
+    )
+
+    buffer = BytesIO()
+    imagem.save(buffer, format="PNG")
+    png_bytes = buffer.getvalue()
+
+    return imagem, png_bytes
+
+
+def exibir_etiqueta(codigo_barras, linhas_etiqueta, nome_arquivo):
+    st.subheader("Pré-visualização da Etiqueta")
+
+    for linha in linhas_etiqueta:
+        st.write(linha)
+
+    st.code(codigo_barras)
+
+    imagem, png_bytes = gerar_codigo_barras_png(codigo_barras)
+
+    if imagem is not None:
+        st.image(imagem, caption="Código de Barras", use_container_width=False)
+
+        st.download_button(
+            label="Baixar Código de Barras em PNG",
+            data=png_bytes,
+            file_name=nome_arquivo,
+            mime="image/png"
+        )
+    else:
+        st.error("Não foi possível gerar o código de barras.")
+
+
 
 # =========================
 # INICIALIZAÇÃO
@@ -193,7 +246,8 @@ modulo = st.sidebar.radio(
         "Bloqueio / Desbloqueio",
         "Gestão de Lotes e Validades",
         "Rastreabilidade",
-        "Pedidos / Ordens",
+        "Etiquetas / Código de Barras",
+        "Pedidos / Ordens",        
         "Gestão de Status de Pedidos",
         "Picking / Separação",        
         "Expedição / Conferência",
@@ -1789,6 +1843,249 @@ elif modulo == "Rastreabilidade":
                 )
 
                 st.dataframe(resumo_pedidos_status, use_container_width=True)
+
+# =========================
+# ETIQUETAS / CÓDIGO DE BARRAS
+# =========================
+
+elif modulo == "Etiquetas / Código de Barras":
+    st.header("Etiquetas / Código de Barras")
+
+    st.write(
+        "Nesta área você pode gerar códigos de barras para produtos, localizações, estoque e pedidos."
+    )
+
+    tipo_etiqueta = st.selectbox(
+        "Tipo de Etiqueta",
+        [
+            "Produto",
+            "Localização",
+            "Estoque",
+            "Pedido / Ordem",
+            "Código Manual"
+        ]
+    )
+
+    st.divider()
+
+    # =========================
+    # ETIQUETA DE PRODUTO
+    # =========================
+
+    if tipo_etiqueta == "Produto":
+        st.subheader("Etiqueta de Produto")
+
+        if st.session_state.produtos.empty:
+            st.warning("Não há produtos cadastrados.")
+        else:
+            sku_etiqueta = st.selectbox(
+                "Selecione o SKU",
+                st.session_state.produtos["SKU"].tolist()
+            )
+
+            produto_etiqueta = st.session_state.produtos[
+                st.session_state.produtos["SKU"] == sku_etiqueta
+            ].iloc[0]
+
+            codigo_barras = str(produto_etiqueta["SKU"])
+
+            linhas = [
+                f"**SKU:** {produto_etiqueta['SKU']}",
+                f"**Descrição:** {produto_etiqueta['Descrição']}",
+                f"**Unidade:** {produto_etiqueta['Unidade']}",
+                f"**Categoria:** {produto_etiqueta['Categoria']}",
+                f"**Status:** {produto_etiqueta['Status']}"
+            ]
+
+            exibir_etiqueta(
+                codigo_barras=codigo_barras,
+                linhas_etiqueta=linhas,
+                nome_arquivo=f"etiqueta_produto_{sku_etiqueta}.png"
+            )
+
+    # =========================
+    # ETIQUETA DE LOCALIZAÇÃO
+    # =========================
+
+    elif tipo_etiqueta == "Localização":
+        st.subheader("Etiqueta de Localização")
+
+        if st.session_state.localizacoes.empty:
+            st.warning("Não há localizações cadastradas.")
+        else:
+            local_etiqueta = st.selectbox(
+                "Selecione a Localização",
+                st.session_state.localizacoes["Código"].tolist()
+            )
+
+            localizacao_etiqueta = st.session_state.localizacoes[
+                st.session_state.localizacoes["Código"] == local_etiqueta
+            ].iloc[0]
+
+            codigo_barras = str(localizacao_etiqueta["Código"])
+
+            linhas = [
+                f"**Localização:** {localizacao_etiqueta['Código']}",
+                f"**Tipo:** {localizacao_etiqueta['Tipo']}",
+                f"**Rua:** {localizacao_etiqueta['Rua']}",
+                f"**Coluna:** {localizacao_etiqueta['Coluna']}",
+                f"**Nível:** {localizacao_etiqueta['Nível']}",
+                f"**Posição:** {localizacao_etiqueta['Posição']}",
+                f"**Status:** {localizacao_etiqueta['Status']}"
+            ]
+
+            exibir_etiqueta(
+                codigo_barras=codigo_barras,
+                linhas_etiqueta=linhas,
+                nome_arquivo=f"etiqueta_localizacao_{local_etiqueta}.png"
+            )
+
+    # =========================
+    # ETIQUETA DE ESTOQUE
+    # =========================
+
+    elif tipo_etiqueta == "Estoque":
+        st.subheader("Etiqueta de Estoque")
+
+        if st.session_state.estoque.empty:
+            st.warning("Não há itens em estoque.")
+        else:
+            estoque_etiqueta = st.session_state.estoque.copy()
+
+            estoque_etiqueta["Opção"] = (
+                estoque_etiqueta["SKU"].astype(str)
+                + " | "
+                + estoque_etiqueta["Descrição"].astype(str)
+                + " | Local: "
+                + estoque_etiqueta["Localização"].astype(str)
+                + " | Lote: "
+                + estoque_etiqueta["Lote"].astype(str)
+                + " | Qtd: "
+                + estoque_etiqueta["Quantidade"].astype(str)
+                + " | Status: "
+                + estoque_etiqueta["Status Estoque"].astype(str)
+            )
+
+            opcao_estoque_etiqueta = st.selectbox(
+                "Selecione o Item de Estoque",
+                estoque_etiqueta["Opção"].tolist()
+            )
+
+            indice_estoque_etiqueta = estoque_etiqueta[
+                estoque_etiqueta["Opção"] == opcao_estoque_etiqueta
+            ].index[0]
+
+            item_estoque_etiqueta = st.session_state.estoque.loc[indice_estoque_etiqueta]
+
+            sku_est = item_estoque_etiqueta["SKU"]
+            lote_est = item_estoque_etiqueta["Lote"]
+            local_est = item_estoque_etiqueta["Localização"]
+
+            codigo_barras = f"SKU:{sku_est}|LOTE:{lote_est}|LOC:{local_est}"
+
+            linhas = [
+                f"**SKU:** {item_estoque_etiqueta['SKU']}",
+                f"**Descrição:** {item_estoque_etiqueta['Descrição']}",
+                f"**Localização:** {item_estoque_etiqueta['Localização']}",
+                f"**Lote:** {item_estoque_etiqueta['Lote']}",
+                f"**Validade:** {item_estoque_etiqueta['Validade']}",
+                f"**Quantidade:** {item_estoque_etiqueta['Quantidade']}",
+                f"**Status Estoque:** {item_estoque_etiqueta['Status Estoque']}"
+            ]
+
+            exibir_etiqueta(
+                codigo_barras=codigo_barras,
+                linhas_etiqueta=linhas,
+                nome_arquivo=f"etiqueta_estoque_{sku_est}_{local_est}.png"
+            )
+
+    # =========================
+    # ETIQUETA DE PEDIDO / ORDEM
+    # =========================
+
+    elif tipo_etiqueta == "Pedido / Ordem":
+        st.subheader("Etiqueta de Pedido / Ordem")
+
+        if st.session_state.pedidos.empty:
+            st.warning("Não há pedidos ou ordens cadastrados.")
+        else:
+            pedidos_etiqueta = st.session_state.pedidos.copy()
+
+            pedidos_etiqueta["Opção"] = (
+                pedidos_etiqueta["Pedido"].astype(str)
+                + " | SKU: "
+                + pedidos_etiqueta["SKU"].astype(str)
+                + " | Qtd: "
+                + pedidos_etiqueta["Quantidade"].astype(str)
+                + " | Status: "
+                + pedidos_etiqueta["Status"].astype(str)
+            )
+
+            opcao_pedido_etiqueta = st.selectbox(
+                "Selecione o Pedido / Ordem",
+                pedidos_etiqueta["Opção"].tolist()
+            )
+
+            indice_pedido_etiqueta = pedidos_etiqueta[
+                pedidos_etiqueta["Opção"] == opcao_pedido_etiqueta
+            ].index[0]
+
+            pedido_etiqueta = st.session_state.pedidos.loc[indice_pedido_etiqueta]
+
+            numero_pedido_etiqueta = pedido_etiqueta["Pedido"]
+            sku_pedido_etiqueta = pedido_etiqueta["SKU"]
+
+            codigo_barras = f"PED:{numero_pedido_etiqueta}|SKU:{sku_pedido_etiqueta}"
+
+            linhas = [
+                f"**Pedido / Ordem:** {pedido_etiqueta['Pedido']}",
+                f"**Cliente / Destino:** {pedido_etiqueta['Cliente / Destino']}",
+                f"**SKU:** {pedido_etiqueta['SKU']}",
+                f"**Descrição:** {pedido_etiqueta['Descrição']}",
+                f"**Quantidade:** {pedido_etiqueta['Quantidade']}",
+                f"**Prioridade:** {pedido_etiqueta['Prioridade']}",
+                f"**Status:** {pedido_etiqueta['Status']}"
+            ]
+
+            exibir_etiqueta(
+                codigo_barras=codigo_barras,
+                linhas_etiqueta=linhas,
+                nome_arquivo=f"etiqueta_pedido_{numero_pedido_etiqueta}_{sku_pedido_etiqueta}.png"
+            )
+
+    # =========================
+    # CÓDIGO MANUAL
+    # =========================
+
+    elif tipo_etiqueta == "Código Manual":
+        st.subheader("Código Manual")
+
+        codigo_manual = st.text_input(
+            "Digite o conteúdo do código de barras",
+            placeholder="Exemplo: TESTE-001 ou A-01-01-01"
+        )
+
+        descricao_manual = st.text_area(
+            "Texto adicional da etiqueta",
+            placeholder="Exemplo: Produto teste / Localização de picking / Pedido interno"
+        )
+
+        if codigo_manual.strip() == "":
+            st.info("Digite um conteúdo para gerar o código de barras.")
+        else:
+            linhas = [
+                f"**Código:** {codigo_manual}",
+                f"**Descrição:** {descricao_manual}"
+            ]
+
+            nome_arquivo_manual = codigo_manual.replace(" ", "_").replace("/", "_").replace("|", "_")
+
+            exibir_etiqueta(
+                codigo_barras=codigo_manual,
+                linhas_etiqueta=linhas,
+                nome_arquivo=f"etiqueta_manual_{nome_arquivo_manual}.png"
+            )
+
 
 # =========================
 # PEDIDOS / ORDENS
