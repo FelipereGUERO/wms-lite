@@ -64,6 +64,19 @@ def inicializar_dados():
             "Observação"
         ])
 
+    if "pedidos" not in st.session_state:
+        st.session_state.pedidos = pd.DataFrame(columns=[
+            "Pedido",
+            "Cliente / Destino",
+            "SKU",
+            "Descrição",
+            "Quantidade",
+            "Prioridade",
+            "Status",
+            "Data Criação",
+            "Observação"
+        ])
+
 
 def registrar_movimentacao(tipo, sku, descricao, origem, destino, quantidade, usuario, observacao):
     nova_mov = {
@@ -126,6 +139,7 @@ modulo = st.sidebar.radio(
         "Recebimento",
         "Consulta de Estoque",
         "Movimentação Interna",
+        "Pedidos / Ordens",
         "Picking / Separação",
         "Inventário",
         "Histórico de Movimentações",
@@ -135,7 +149,7 @@ modulo = st.sidebar.radio(
 
 st.sidebar.divider()
 usuario_logado = st.sidebar.text_input("Usuário", value="operador")
-st.sidebar.caption("Versão MVP 0.1")
+st.sidebar.caption("Versão MVP 0.2")
 
 
 # =========================
@@ -149,13 +163,15 @@ if modulo == "Dashboard":
     total_localizacoes = st.session_state.localizacoes["Código"].nunique() if not st.session_state.localizacoes.empty else 0
     total_estoque = st.session_state.estoque["Quantidade"].sum() if not st.session_state.estoque.empty else 0
     total_movimentacoes = len(st.session_state.movimentacoes)
+    total_pedidos = len(st.session_state.pedidos)
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     col1.metric("SKUs Cadastrados", total_skus)
     col2.metric("Localizações", total_localizacoes)
     col3.metric("Quantidade em Estoque", total_estoque)
     col4.metric("Movimentações", total_movimentacoes)
+    col5.metric("Pedidos / Ordens", total_pedidos)
 
     st.divider()
 
@@ -169,6 +185,20 @@ if modulo == "Dashboard":
         )["Quantidade"].sum()
 
         st.dataframe(estoque_resumo, use_container_width=True)
+
+    st.divider()
+
+    st.subheader("Pedidos por Status")
+
+    if st.session_state.pedidos.empty:
+        st.info("Ainda não existem pedidos cadastrados.")
+    else:
+        pedidos_status = st.session_state.pedidos.groupby(
+            ["Status"], as_index=False
+        )["Pedido"].count()
+
+        pedidos_status = pedidos_status.rename(columns={"Pedido": "Quantidade"})
+        st.dataframe(pedidos_status, use_container_width=True)
 
 
 # =========================
@@ -427,7 +457,6 @@ elif modulo == "Movimentação Interna":
                 if quantidade_mov > saldo_origem:
                     st.error("Quantidade maior que o saldo disponível na origem.")
                 else:
-                    # Baixa na origem
                     indices = st.session_state.estoque[
                         (st.session_state.estoque["SKU"] == sku_mov) &
                         (st.session_state.estoque["Localização"] == origem)
@@ -452,7 +481,6 @@ elif modulo == "Movimentação Interna":
                         st.session_state.estoque["Quantidade"] > 0
                     ]
 
-                    # Entrada no destino
                     novo_estoque_destino = {
                         "SKU": sku_mov,
                         "Descrição": descricao_mov,
@@ -480,6 +508,114 @@ elif modulo == "Movimentação Interna":
                     )
 
                     st.success("Movimentação realizada com sucesso.")
+
+
+# =========================
+# PEDIDOS / ORDENS
+# =========================
+
+elif modulo == "Pedidos / Ordens":
+    st.header("Pedidos / Ordens")
+
+    st.write(
+        "Nesta área você pode criar pedidos, ordens de separação, requisições internas ou demandas para expedição."
+    )
+
+    if st.session_state.produtos.empty:
+        st.warning("Cadastre produtos antes de criar pedidos.")
+    else:
+        with st.form("form_pedido"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                numero_pedido = st.text_input("Número do Pedido / Ordem")
+                cliente_destino = st.text_input("Cliente / Destino")
+                sku_pedido = st.selectbox("SKU", st.session_state.produtos["SKU"].tolist())
+                descricao_pedido = obter_descricao_produto(sku_pedido)
+                st.text_input("Descrição", value=descricao_pedido, disabled=True)
+
+            with col2:
+                quantidade_pedido = st.number_input("Quantidade", min_value=1, step=1)
+                prioridade = st.selectbox("Prioridade", ["Normal", "Alta", "Urgente"])
+                status_pedido = st.selectbox("Status", [
+                    "Criado",
+                    "Aguardando Picking",
+                    "Em Picking",
+                    "Separado",
+                    "Conferido",
+                    "Expedido",
+                    "Cancelado"
+                ])
+                observacao_pedido = st.text_area("Observação")
+
+            salvar_pedido = st.form_submit_button("Salvar Pedido / Ordem")
+
+            if salvar_pedido:
+                if numero_pedido == "":
+                    st.error("Informe o número do pedido ou ordem.")
+                else:
+                    novo_pedido = {
+                        "Pedido": numero_pedido,
+                        "Cliente / Destino": cliente_destino,
+                        "SKU": sku_pedido,
+                        "Descrição": descricao_pedido,
+                        "Quantidade": quantidade_pedido,
+                        "Prioridade": prioridade,
+                        "Status": status_pedido,
+                        "Data Criação": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                        "Observação": observacao_pedido
+                    }
+
+                    st.session_state.pedidos = pd.concat(
+                        [st.session_state.pedidos, pd.DataFrame([novo_pedido])],
+                        ignore_index=True
+                    )
+
+                    st.success("Pedido / Ordem cadastrado com sucesso.")
+
+    st.divider()
+
+    st.subheader("Pedidos / Ordens Cadastrados")
+
+    if st.session_state.pedidos.empty:
+        st.info("Ainda não existem pedidos ou ordens cadastrados.")
+    else:
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            filtro_pedido = st.text_input("Filtrar por Pedido")
+
+        with col2:
+            filtro_sku_pedido = st.text_input("Filtrar por SKU")
+
+        with col3:
+            filtro_status_pedido = st.selectbox("Filtrar por Status", [
+                "Todos",
+                "Criado",
+                "Aguardando Picking",
+                "Em Picking",
+                "Separado",
+                "Conferido",
+                "Expedido",
+                "Cancelado"
+            ])
+
+        df_pedidos = st.session_state.pedidos.copy()
+
+        if filtro_pedido:
+            df_pedidos = df_pedidos[
+                df_pedidos["Pedido"].str.contains(filtro_pedido, case=False, na=False)
+            ]
+
+        if filtro_sku_pedido:
+            df_pedidos = df_pedidos[
+                df_pedidos["SKU"].str.contains(filtro_sku_pedido, case=False, na=False)
+            ]
+
+        if filtro_status_pedido != "Todos":
+            df_pedidos = df_pedidos[df_pedidos["Status"] == filtro_status_pedido]
+
+        st.dataframe(df_pedidos, use_container_width=True)
 
 
 # =========================
@@ -669,6 +805,13 @@ elif modulo == "Exportar Dados":
             label="Baixar Localizações",
             data=st.session_state.localizacoes.to_csv(index=False, sep=";").encode("utf-8"),
             file_name="localizacoes.csv",
+            mime="text/csv"
+        )
+
+        st.download_button(
+            label="Baixar Pedidos / Ordens",
+            data=st.session_state.pedidos.to_csv(index=False, sep=";").encode("utf-8"),
+            file_name="pedidos.csv",
             mime="text/csv"
         )
 
