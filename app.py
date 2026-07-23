@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+from io import BytesIO
+
 import barcode
 from barcode.writer import ImageWriter
 from PIL import Image, ImageDraw, ImageFont
-from io import BytesIO
 
 # =========================
 # CONFIGURAÇÃO DA PÁGINA
@@ -220,87 +221,185 @@ def gerar_codigo_barras_imagem(texto_codigo):
     return imagem_codigo
 
 
+def carregar_fonte(tamanho=20, negrito=False):
+    try:
+        if negrito:
+            return ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                tamanho
+            )
+        else:
+            return ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                tamanho
+            )
+    except:
+        return ImageFont.load_default()
+
+
+def gerar_codigo_barras_imagem(texto_codigo_barras):
+    texto_codigo_barras = str(texto_codigo_barras).strip()
+
+    if texto_codigo_barras == "":
+        texto_codigo_barras = "SEM-CODIGO"
+
+    Code128 = barcode.get_barcode_class("code128")
+
+    buffer = BytesIO()
+
+    codigo = Code128(
+        texto_codigo_barras,
+        writer=ImageWriter()
+    )
+
+    codigo.write(
+        buffer,
+        options={
+            "module_width": 0.35,
+            "module_height": 18.0,
+            "quiet_zone": 4.0,
+            "font_size": 14,
+            "text_distance": 4.0,
+            "write_text": True,
+            "background": "white",
+            "foreground": "black"
+        }
+    )
+
+    buffer.seek(0)
+
+    imagem_codigo = Image.open(buffer).convert("RGB")
+
+    return imagem_codigo
+
+
 def criar_etiqueta_visual(titulo, linhas_texto, texto_codigo_barras):
     largura = 1000
-    altura = 620
+    margem = 35
 
-    imagem = Image.new("RGB", (largura, altura), "white")
+    altura_base = 220
+    altura_linhas = len(linhas_texto) * 36
+    altura_codigo = 260
+    altura_total = altura_base + altura_linhas + altura_codigo
+
+    imagem = Image.new("RGB", (largura, altura_total), "white")
     desenho = ImageDraw.Draw(imagem)
 
-    try:
-        fonte_titulo = ImageFont.truetype("DejaVuSans-Bold.ttf", 34)
-        fonte_texto = ImageFont.truetype("DejaVuSans.ttf", 24)
-        fonte_texto_negrito = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
-        fonte_rodape = ImageFont.truetype("DejaVuSans.ttf", 18)
-    except:
-        fonte_titulo = ImageFont.load_default()
-        fonte_texto = ImageFont.load_default()
-        fonte_texto_negrito = ImageFont.load_default()
-        fonte_rodape = ImageFont.load_default()
+    fonte_titulo = carregar_fonte(32, negrito=True)
+    fonte_linha = carregar_fonte(24, negrito=False)
+    fonte_linha_negrito = carregar_fonte(24, negrito=True)
+    fonte_rodape = carregar_fonte(16, negrito=False)
 
     # Borda da etiqueta
-    margem = 20
     desenho.rectangle(
-        [margem, margem, largura - margem, altura - margem],
+        [10, 10, largura - 10, altura_total - 10],
         outline="black",
         width=3
     )
 
+    y = 30
+
     # Título
-    y = 40
     desenho.text(
-        (40, y),
-        titulo,
+        (margem, y),
+        str(titulo),
         fill="black",
         font=fonte_titulo
     )
 
     y += 55
 
-    # Linhas de informação
-    for linha in linhas_texto:
-        desenho.text(
-            (40, y),
-            str(linha),
-            fill="black",
-            font=fonte_texto
-        )
-        y += 34
-
-    # Separador
-    y += 10
+    # Linha divisória
     desenho.line(
-        [(40, y), (largura - 40, y)],
+        [(margem, y), (largura - margem, y)],
         fill="black",
         width=2
     )
 
+    y += 25
+
+    # Informações da etiqueta
+    for linha in linhas_texto:
+        texto_linha = str(linha)
+
+        if ":" in texto_linha:
+            campo, valor = texto_linha.split(":", 1)
+
+            desenho.text(
+                (margem, y),
+                campo.strip() + ":",
+                fill="black",
+                font=fonte_linha_negrito
+            )
+
+            desenho.text(
+                (margem + 260, y),
+                valor.strip(),
+                fill="black",
+                font=fonte_linha
+            )
+        else:
+            desenho.text(
+                (margem, y),
+                texto_linha,
+                fill="black",
+                font=fonte_linha
+            )
+
+        y += 36
+
     y += 20
+
+    # Linha divisória antes do código de barras
+    desenho.line(
+        [(margem, y), (largura - margem, y)],
+        fill="black",
+        width=2
+    )
+
+    y += 25
 
     # Código de barras
     imagem_codigo = gerar_codigo_barras_imagem(texto_codigo_barras)
 
-    largura_codigo = largura - 120
-    altura_codigo = 220
+    largura_maxima_codigo = largura - (margem * 2)
+    altura_maxima_codigo = 210
 
-    imagem_codigo = imagem_codigo.resize(
-        (largura_codigo, altura_codigo)
+    proporcao = min(
+        largura_maxima_codigo / imagem_codigo.width,
+        altura_maxima_codigo / imagem_codigo.height
     )
 
-    x_codigo = 60
+    nova_largura = int(imagem_codigo.width * proporcao)
+    nova_altura = int(imagem_codigo.height * proporcao)
+
+    imagem_codigo = imagem_codigo.resize((nova_largura, nova_altura))
+
+    x_codigo = int((largura - nova_largura) / 2)
+
     imagem.paste(imagem_codigo, (x_codigo, y))
 
-    y += altura_codigo + 20
+    y += nova_altura + 10
 
-    # Texto técnico do código
+    # Rodapé
+    texto_rodape = f"Código de Barras: {texto_codigo_barras}"
+
     desenho.text(
-        (40, y),
-        f"Código: {texto_codigo_barras}",
+        (margem, altura_total - 35),
+        texto_rodape,
         fill="black",
         font=fonte_rodape
     )
 
     return imagem
+
+
+def converter_imagem_para_bytes(imagem):
+    buffer = BytesIO()
+    imagem.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer.getvalue()
+
 
 
 def converter_imagem_para_bytes(imagem):
@@ -2100,11 +2199,11 @@ elif modulo == "Etiquetas / Código de Barras":
             st.image(imagem_etiqueta, caption="Etiqueta de Produto")
 
             st.download_button(
-                label="Baixar Etiqueta em PNG",
-                data=imagem_etiqueta,
-                file_name=f"etiqueta_produto_{sku}.png",
-                mime="image/png"
-            )
+            label="Baixar Etiqueta em PNG",
+            data=converter_imagem_para_bytes(imagem_etiqueta),
+            file_name="etiqueta.png",
+            mime="image/png"
+)
 
     # =========================
     # ETIQUETA DE LOCALIZAÇÃO
