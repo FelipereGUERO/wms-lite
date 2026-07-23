@@ -163,6 +163,13 @@ def valor_ja_cadastrado(df, coluna, valor):
     return df[coluna].astype(str).str.strip().str.upper().eq(
         str(valor).strip().upper()
     ).any()
+
+def converter_imagem_para_png_bytes(imagem):
+    buffer = BytesIO()
+    imagem.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer.getvalue()
+
 def gerar_codigo_barras_imagem(texto_codigo):
     buffer = BytesIO()
 
@@ -2659,14 +2666,15 @@ elif modulo == "Etiquetas / Código de Barras":
                 texto_codigo_barras=codigo_barra
             )
 
-            st.image(imagem_etiqueta, caption="Etiqueta de Produto")
+            imagem_png_bytes = converter_imagem_para_png_bytes(imagem_etiqueta)
 
             st.download_button(
             label="Baixar Etiqueta em PNG",
-            data=converter_imagem_para_bytes(imagem_etiqueta),
+            data=imagem_png_bytes,
             file_name="etiqueta.png",
             mime="image/png"
 )
+
 
     # =========================
     # ETIQUETA DE LOCALIZAÇÃO
