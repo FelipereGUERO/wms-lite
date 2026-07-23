@@ -238,36 +238,26 @@ def carregar_fonte(tamanho=20, negrito=False):
 
 
 def gerar_codigo_barras_imagem(texto_codigo_barras):
-    texto_codigo_barras = str(texto_codigo_barras).strip()
-
-    if texto_codigo_barras == "":
-        texto_codigo_barras = "SEM-CODIGO"
-
-    Code128 = barcode.get_barcode_class("code128")
-
     buffer = BytesIO()
 
-    codigo = Code128(
-        texto_codigo_barras,
-        writer=ImageWriter()
-    )
+    Code128 = barcode.get_barcode_class("code128")
+    codigo = Code128(texto_codigo_barras, writer=ImageWriter())
 
     codigo.write(
         buffer,
         options={
+            "write_text": False,
             "module_width": 0.35,
-            "module_height": 18.0,
-            "quiet_zone": 4.0,
-            "font_size": 14,
-            "text_distance": 4.0,
-            "write_text": True,
+            "module_height": 22,
+            "quiet_zone": 6,
+            "font_size": 0,
+            "text_distance": 1,
             "background": "white",
             "foreground": "black"
         }
     )
 
     buffer.seek(0)
-
     imagem_codigo = Image.open(buffer).convert("RGB")
 
     return imagem_codigo
