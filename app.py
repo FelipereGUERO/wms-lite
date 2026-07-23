@@ -499,8 +499,9 @@ modulo = st.sidebar.radio(
     "Selecione o módulo:",
     [
         "Dashboard",
+        "Modo Coletor",
         "Cadastro de Produtos",
-        "Cadastro de Localizações",
+        "Cadastro de Localizações",        
         "Recebimento",
         "Conferência de Entrada",
         "Consulta de Estoque",        
@@ -793,6 +794,478 @@ if modulo == "Dashboard":
     else:
         for alerta in alertas:
             st.warning(alerta)
+
+# =========================
+# MODO COLETOR
+# =========================
+
+elif modulo == "Modo Coletor":
+    st.header("📱 Modo Coletor")
+
+    st.write(
+        "Tela simplificada para uso em coletor de dados, celular ou tablet. "
+        "Use o leitor de código de barras nos campos de SKU, localização, pedido ou lote."
+    )
+
+    st.warning(
+        "Versão inicial do modo coletor. O leitor normalmente funciona como teclado: "
+        "ao escanear, ele preenche o campo selecionado."
+    )
+
+    operacao_coletor = st.selectbox(
+        "Operação",
+        [
+            "Consulta Rápida",
+            "Recebimento Rápido",
+            "Movimentação Rápida",
+            "Picking por Pedido"
+        ]
+    )
+
+    st.divider()
+
+    # =========================
+    # CONSULTA RÁPIDA
+    # =========================
+
+    if operacao_coletor == "Consulta Rápida":
+        st.subheader("Consulta Rápida de Estoque")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            sku_consulta = st.text_input(
+                "Escaneie ou digite o SKU",
+                key="coletor_consulta_sku"
+            )
+
+        with col2:
+            local_consulta = st.text_input(
+                "Escaneie ou digite a Localização",
+                key="coletor_consulta_local"
+            )
+
+        if st.session_state.estoque.empty:
+            st.info("Não há estoque cadastrado.")
+        else:
+            df_consulta = st.session_state.estoque.copy()
+
+            if sku_consulta:
+                df_consulta = df_consulta[
+                    df_consulta["SKU"].astype(str).str.contains(
+                        sku_consulta,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if local_consulta:
+                df_consulta = df_consulta[
+                    df_consulta["Localização"].astype(str).str.contains(
+                        local_consulta,
+                        case=False,
+                        na=False
+                    )
+                ]
+
+            if df_consulta.empty:
+                st.warning("Nenhum estoque encontrado para a consulta.")
+            else:
+                quantidade_total_consulta = df_consulta["Quantidade"].sum()
+
+                st.metric("Quantidade Encontrada", quantidade_total_consulta)
+
+                st.dataframe(
+                    df_consulta[
+                        [
+                            "SKU",
+                            "Descrição",
+                            "Localização",
+                            "Lote",
+                            "Validade",
+                            "Quantidade",
+                            "Status Estoque"
+                        ]
+                    ],
+                    use_container_width=True
+                )
+
+    # =========================
+    # RECEBIMENTO RÁPIDO
+    # =========================
+
+    elif operacao_coletor == "Recebimento Rápido":
+        st.subheader("Recebimento Rápido")
+
+        if st.session_state.produtos.empty:
+            st.warning("Cadastre produtos antes de usar o recebimento rápido.")
+        else:
+            with st.form("form_coletor_recebimento"):
+                sku_receb_rapido = st.text_input(
+                    "Escaneie ou digite o SKU",
+                    key="coletor_receb_sku"
+                )
+
+                descricao_receb_rapido = obter_descricao_produto(sku_receb_rapido)
+
+                if sku_receb_rapido:
+                    if descricao_receb_rapido == "":
+                        st.warning("SKU não encontrado no cadastro de produtos.")
+                    else:
+                        st.success(f"Produto encontrado: {descricao_receb_rapido}")
+
+                lote_receb_rapido = st.text_input(
+                    "Lote",
+                    key="coletor_receb_lote"
+                )
+
+                validade_receb_rapido = st.date_input(
+                    "Validade",
+                    value=date.today(),
+                    key="coletor_receb_validade"
+                )
+
+                quantidade_receb_rapido = st.number_input(
+                    "Quantidade",
+                    min_value=1,
+                    step=1,
+                    key="coletor_receb_quantidade"
+                )
+
+                if st.session_state.localizacoes.empty:
+                    destino_receb_rapido = st.text_input(
+                        "Localização de Destino",
+                        value="RECEBIMENTO",
+                        key="coletor_receb_destino_texto"
+                    )
+                else:
+                    destino_receb_rapido = st.selectbox(
+                        "Localização de Destino",
+                        st.session_state.localizacoes["Código"].tolist(),
+                        key="coletor_receb_destino_select"
+                    )
+
+                status_receb_rapido = st.selectbox(
+                    "Status do Estoque",
+                    [
+                        "Disponível",
+                        "Quarentena",
+                        "Bloqueado"
+                    ],
+                    key="coletor_receb_status"
+                )
+
+                confirmar_receb_rapido = st.form_submit_button("Confirmar Recebimento Rápido")
+
+                if confirmar_receb_rapido:
+                    if sku_receb_rapido.strip() == "":
+                        st.error("Informe ou escaneie o SKU.")
+                    elif descricao_receb_rapido == "":
+                        st.error("SKU não encontrado no cadastro. Cadastre o produto antes de receber.")
+                    else:
+                        novo_estoque_receb_rapido = {
+                            "SKU": sku_receb_rapido.strip(),
+                            "Descrição": descricao_receb_rapido,
+                            "Localização": destino_receb_rapido,
+                            "Lote": lote_receb_rapido.strip(),
+                            "Validade": validade_receb_rapido.strftime("%d/%m/%Y"),
+                            "Quantidade": quantidade_receb_rapido,
+                            "Status Estoque": status_receb_rapido
+                        }
+
+                        st.session_state.estoque = pd.concat(
+                            [
+                                st.session_state.estoque,
+                                pd.DataFrame([novo_estoque_receb_rapido])
+                            ],
+                            ignore_index=True
+                        )
+
+                        registrar_movimentacao(
+                            tipo="Recebimento Rápido - Coletor",
+                            sku=sku_receb_rapido.strip(),
+                            descricao=descricao_receb_rapido,
+                            origem="Fornecedor / Coletor",
+                            destino=destino_receb_rapido,
+                            quantidade=quantidade_receb_rapido,
+                            usuario=usuario_logado,
+                            observacao=(
+                                f"Lote: {lote_receb_rapido}. "
+                                f"Validade: {validade_receb_rapido.strftime('%d/%m/%Y')}. "
+                                f"Status: {status_receb_rapido}."
+                            )
+                        )
+
+                        st.success("Recebimento rápido registrado com sucesso.")
+
+    # =========================
+    # MOVIMENTAÇÃO RÁPIDA
+    # =========================
+
+    elif operacao_coletor == "Movimentação Rápida":
+        st.subheader("Movimentação Rápida")
+
+        if st.session_state.estoque.empty:
+            st.warning("Não há estoque disponível para movimentação.")
+        else:
+            with st.form("form_coletor_movimentacao"):
+                sku_mov_rapido = st.text_input(
+                    "Escaneie ou digite o SKU",
+                    key="coletor_mov_sku"
+                )
+
+                origem_mov_rapido = st.text_input(
+                    "Escaneie ou digite a Localização de Origem",
+                    key="coletor_mov_origem"
+                )
+
+                destino_mov_rapido = st.text_input(
+                    "Escaneie ou digite a Localização de Destino",
+                    key="coletor_mov_destino"
+                )
+
+                quantidade_mov_rapido = st.number_input(
+                    "Quantidade",
+                    min_value=1,
+                    step=1,
+                    key="coletor_mov_quantidade"
+                )
+
+                confirmar_mov_rapido = st.form_submit_button("Confirmar Movimentação Rápida")
+
+                if confirmar_mov_rapido:
+                    sku_mov_rapido = sku_mov_rapido.strip()
+                    origem_mov_rapido = origem_mov_rapido.strip()
+                    destino_mov_rapido = destino_mov_rapido.strip()
+
+                    if sku_mov_rapido == "" or origem_mov_rapido == "" or destino_mov_rapido == "":
+                        st.error("Informe SKU, origem e destino.")
+                    else:
+                        saldo_origem_rapido = st.session_state.estoque[
+                            (
+                                st.session_state.estoque["SKU"].astype(str).str.upper()
+                                == sku_mov_rapido.upper()
+                            )
+                            &
+                            (
+                                st.session_state.estoque["Localização"].astype(str).str.upper()
+                                == origem_mov_rapido.upper()
+                            )
+                        ]["Quantidade"].sum()
+
+                        if saldo_origem_rapido <= 0:
+                            st.error("Não há saldo para este SKU na localização de origem.")
+                        elif quantidade_mov_rapido > saldo_origem_rapido:
+                            st.error("Quantidade maior que o saldo disponível na origem.")
+                        else:
+                            descricao_mov_rapido = obter_descricao_produto(sku_mov_rapido)
+
+                            indices_mov_rapido = st.session_state.estoque[
+                                (
+                                    st.session_state.estoque["SKU"].astype(str).str.upper()
+                                    == sku_mov_rapido.upper()
+                                )
+                                &
+                                (
+                                    st.session_state.estoque["Localização"].astype(str).str.upper()
+                                    == origem_mov_rapido.upper()
+                                )
+                            ].index
+
+                            qtd_restante_mov_rapido = quantidade_mov_rapido
+
+                            for idx in indices_mov_rapido:
+                                qtd_linha = st.session_state.estoque.at[idx, "Quantidade"]
+
+                                if qtd_restante_mov_rapido <= 0:
+                                    break
+
+                                if qtd_linha <= qtd_restante_mov_rapido:
+                                    qtd_restante_mov_rapido -= qtd_linha
+                                    st.session_state.estoque.at[idx, "Quantidade"] = 0
+                                else:
+                                    st.session_state.estoque.at[idx, "Quantidade"] = qtd_linha - qtd_restante_mov_rapido
+                                    qtd_restante_mov_rapido = 0
+
+                            st.session_state.estoque = st.session_state.estoque[
+                                st.session_state.estoque["Quantidade"] > 0
+                            ]
+
+                            novo_estoque_mov_rapido = {
+                                "SKU": sku_mov_rapido,
+                                "Descrição": descricao_mov_rapido,
+                                "Localização": destino_mov_rapido,
+                                "Lote": "",
+                                "Validade": "",
+                                "Quantidade": quantidade_mov_rapido,
+                                "Status Estoque": "Disponível"
+                            }
+
+                            st.session_state.estoque = pd.concat(
+                                [
+                                    st.session_state.estoque,
+                                    pd.DataFrame([novo_estoque_mov_rapido])
+                                ],
+                                ignore_index=True
+                            )
+
+                            registrar_movimentacao(
+                                tipo="Movimentação Rápida - Coletor",
+                                sku=sku_mov_rapido,
+                                descricao=descricao_mov_rapido,
+                                origem=origem_mov_rapido,
+                                destino=destino_mov_rapido,
+                                quantidade=quantidade_mov_rapido,
+                                usuario=usuario_logado,
+                                observacao="Movimentação realizada pelo modo coletor."
+                            )
+
+                            st.success("Movimentação rápida realizada com sucesso.")
+
+    # =========================
+    # PICKING POR PEDIDO
+    # =========================
+
+    elif operacao_coletor == "Picking por Pedido":
+        st.subheader("Picking por Pedido")
+
+        if st.session_state.estoque.empty:
+            st.warning("Não há estoque disponível para picking.")
+        elif st.session_state.pedidos.empty:
+            st.warning("Não há pedidos cadastrados.")
+        else:
+            pedidos_picking_coletor = st.session_state.pedidos[
+                st.session_state.pedidos["Status"].isin(
+                    [
+                        "Criado",
+                        "Aguardando Picking",
+                        "Em Picking"
+                    ]
+                )
+            ].copy()
+
+            if pedidos_picking_coletor.empty:
+                st.info("Não existem pedidos pendentes para picking.")
+            else:
+                pedidos_picking_coletor["Opção"] = (
+                    pedidos_picking_coletor["Pedido"].astype(str)
+                    + " | SKU: "
+                    + pedidos_picking_coletor["SKU"].astype(str)
+                    + " | Qtd: "
+                    + pedidos_picking_coletor["Quantidade"].astype(str)
+                    + " | Status: "
+                    + pedidos_picking_coletor["Status"].astype(str)
+                )
+
+                opcao_pick_coletor = st.selectbox(
+                    "Selecione o Pedido / Ordem",
+                    pedidos_picking_coletor["Opção"].tolist(),
+                    key="coletor_pick_pedido"
+                )
+
+                indice_pick_coletor = pedidos_picking_coletor[
+                    pedidos_picking_coletor["Opção"] == opcao_pick_coletor
+                ].index[0]
+
+                pedido_pick_coletor = st.session_state.pedidos.loc[indice_pick_coletor]
+
+                numero_pedido_coletor = pedido_pick_coletor["Pedido"]
+                sku_pick_coletor = pedido_pick_coletor["SKU"]
+                descricao_pick_coletor = pedido_pick_coletor["Descrição"]
+                quantidade_pick_coletor = int(pedido_pick_coletor["Quantidade"])
+                cliente_pick_coletor = pedido_pick_coletor["Cliente / Destino"]
+
+                st.info(
+                    f"Pedido: {numero_pedido_coletor} | SKU: {sku_pick_coletor} | "
+                    f"Quantidade: {quantidade_pick_coletor}"
+                )
+
+                saldo_pick_coletor = st.session_state.estoque[
+                    (
+                        st.session_state.estoque["SKU"].astype(str).str.upper()
+                        == str(sku_pick_coletor).strip().upper()
+                    )
+                    &
+                    (
+                        st.session_state.estoque["Status Estoque"] == "Disponível"
+                    )
+                ]["Quantidade"].sum()
+
+                st.metric("Saldo Disponível", saldo_pick_coletor)
+
+                with st.form("form_coletor_picking"):
+                    sku_validacao_pick = st.text_input(
+                        "Escaneie o SKU para validar",
+                        key="coletor_pick_sku_validacao"
+                    )
+
+                    quantidade_confirmada_pick = st.number_input(
+                        "Quantidade Confirmada",
+                        min_value=1,
+                        step=1,
+                        value=quantidade_pick_coletor,
+                        key="coletor_pick_quantidade"
+                    )
+
+                    confirmar_pick_coletor = st.form_submit_button("Confirmar Picking pelo Coletor")
+
+                    if confirmar_pick_coletor:
+                        if sku_validacao_pick.strip().upper() != str(sku_pick_coletor).strip().upper():
+                            st.error("SKU escaneado diferente do SKU do pedido.")
+                        elif quantidade_confirmada_pick != quantidade_pick_coletor:
+                            st.error("Quantidade confirmada diferente da quantidade do pedido.")
+                        elif saldo_pick_coletor < quantidade_pick_coletor:
+                            st.error("Saldo insuficiente para atender este pedido.")
+                        else:
+                            indices_pick_coletor = st.session_state.estoque[
+                                (
+                                    st.session_state.estoque["SKU"].astype(str).str.upper()
+                                    == str(sku_pick_coletor).strip().upper()
+                                )
+                                &
+                                (
+                                    st.session_state.estoque["Status Estoque"] == "Disponível"
+                                )
+                            ].index
+
+                            qtd_restante_pick_coletor = quantidade_pick_coletor
+                            origem_pick_coletor = ""
+
+                            for idx in indices_pick_coletor:
+                                qtd_linha = st.session_state.estoque.at[idx, "Quantidade"]
+                                local_linha = st.session_state.estoque.at[idx, "Localização"]
+
+                                if origem_pick_coletor == "":
+                                    origem_pick_coletor = local_linha
+
+                                if qtd_restante_pick_coletor <= 0:
+                                    break
+
+                                if qtd_linha <= qtd_restante_pick_coletor:
+                                    qtd_restante_pick_coletor -= qtd_linha
+                                    st.session_state.estoque.at[idx, "Quantidade"] = 0
+                                else:
+                                    st.session_state.estoque.at[idx, "Quantidade"] = qtd_linha - qtd_restante_pick_coletor
+                                    qtd_restante_pick_coletor = 0
+
+                            st.session_state.estoque = st.session_state.estoque[
+                                st.session_state.estoque["Quantidade"] > 0
+                            ]
+
+                            st.session_state.pedidos.at[indice_pick_coletor, "Status"] = "Separado"
+
+                            registrar_movimentacao(
+                                tipo="Picking Coletor",
+                                sku=sku_pick_coletor,
+                                descricao=descricao_pick_coletor,
+                                origem=origem_pick_coletor,
+                                destino=f"Pedido {numero_pedido_coletor}",
+                                quantidade=quantidade_pick_coletor,
+                                usuario=usuario_logado,
+                                observacao=f"Cliente/Destino: {cliente_pick_coletor}"
+                            )
+
+                            st.success("Picking confirmado pelo coletor. Pedido atualizado para 'Separado'.")
 
 # =========================
 # CADASTRO DE PRODUTOS
